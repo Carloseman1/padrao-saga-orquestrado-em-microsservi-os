@@ -140,10 +140,6 @@ Para acessar as aplicações e realizar um pedido, basta acessar a URL:
 
 http://localhost:3000/swagger-ui.html
 
-Você chegará nesta página:
-
-![Swagger](Conte%C3%BAdos/Documentacao.png)
-
 As aplicações executarão nas seguintes portas:
 
 * Order-Service: 3000
