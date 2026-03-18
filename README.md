@@ -1,5 +1,9 @@
 # Arquitetura de Microsserviços: Padrão Saga Orquestrado
 
+> Este projeto foi desenvolvido para fins de estudo e aprendizado, com base em conceitos de arquitetura de microsserviços utilizando o padrão Saga Orquestrado.
+> 
+> O objetivo é demonstrar a comunicação entre serviços distribuídos, controle de transações e consistência eventual em sistemas desacoplados.
+
 ### Sumário:
 
 * [Tecnologias](#tecnologias)
