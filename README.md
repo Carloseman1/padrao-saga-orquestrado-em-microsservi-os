@@ -1,346 +1,539 @@
 # Arquitetura de Microsserviços: Padrão Saga Orquestrado
 
-> Este projeto foi desenvolvido para fins de estudo e aprendizado, com base em conceitos de arquitetura de microsserviços utilizando o padrão Saga Orquestrado.
-> 
-> O objetivo é demonstrar a comunicação entre serviços distribuídos, controle de transações e consistência eventual em sistemas desacoplados.
+Pedido de uma livraria passando por três etapas, cada uma num microsserviço com o próprio banco: validar se os livros existem no catálogo, cobrar e baixar o estoque. Como não existe transação que atravesse bancos diferentes, a consistência é garantida por uma saga: um orquestrador decide a próxima etapa e, quando alguma falha, manda desfazer as anteriores na ordem inversa.
 
-### Sumário:
+Projeto de estudo de arquitetura de microsserviços, comunicação assíncrona com Kafka e consistência eventual.
 
-* [Tecnologias](#tecnologias)
-* [Ferramentas utilizadas](#ferramentas-utilizadas)
-* [Arquitetura Proposta](#arquitetura-proposta)
-* [Execução do projeto](#execu%C3%A7%C3%A3o-do-projeto)
-  * [01 - Execução geral via docker-compose](#01---execu%C3%A7%C3%A3o-geral-via-docker-compose)
-  * [02 - Execução geral via automação com script em Python](#02---execu%C3%A7%C3%A3o-geral-via-automa%C3%A7%C3%A3o-com-script-em-python)
-  * [03 - Executando os serviços de bancos de dados e Message Broker](#03---executando-os-servi%C3%A7os-de-bancos-de-dados-e-message-broker)
-  * [04 - Executando manualmente via CLI](#04---executando-manualmente-via-cli)
-* [Acessando a aplicação](#acessando-a-aplica%C3%A7%C3%A3o)
-* [Acessando tópicos com Redpanda Console](#acessando-t%C3%B3picos-com-redpanda-console)
-* [Dados da API](#dados-da-api)
-  * [Produtos registrados e seu estoque](#produtos-registrados-e-seu-estoque)
-  * [Endpoint para iniciar a saga](#endpoint-para-iniciar-a-saga)
-  * [Endpoint para visualizar a saga](#endpoint-para-visualizar-a-saga)
-  * [Acesso ao MongoDB](#acesso-ao-mongodb)
+**Atalhos:** [Como executar](#como-executar) · [Arquitetura](#arquitetura) · [Como a saga funciona](#como-a-saga-funciona) · [Por que MongoDB no pedido](#por-que-mongodb-no-pedido-service) · [Modelo de dados](#modelo-de-dados) · [Decisões técnicas](#decisões-técnicas) · [Endpoints](#endpoints) · [O que ainda daria pra melhorar](#o-que-ainda-daria-pra-melhorar)
 
-## Tecnologias
+## Stack
 
-[Voltar ao início](#sum%C3%A1rio)
+| Tecnologia | Uso |
+|---|---|
+| Java 21 | Linguagem |
+| Spring Boot 3.5.14 | Framework principal |
+| Apache Kafka | Mensageria entre os serviços |
+| MongoDB 7 | Banco do pedido-service |
+| PostgreSQL 16 | Banco dos serviços de validação, pagamento e estoque |
+| Spring Data JPA + Flyway | Persistência e migrations no PostgreSQL |
+| Spring Data MongoDB | Persistência no pedido-service |
+| springdoc-openapi | Swagger do pedido-service |
+| JUnit 5 + Mockito + AssertJ | Testes |
+| Docker + docker compose | Ambiente local |
+| Redpanda Console | Visualizar tópicos e mensagens do Kafka |
 
-* **Java 17**
-* **Spring Boot 3**
-* **Apache Kafka**
-* **API REST**
-* **PostgreSQL**
-* **MongoDB**
-* **Docker**
-* **docker-compose**
-* **Redpanda Console**
+44 testes, nenhum deles sobe contexto do Spring nem encosta em banco ou Kafka.
 
-# Ferramentas utilizadas
+---
 
-[Voltar ao início](#sum%C3%A1rio)
+## Como executar
 
-* **IntelliJ IDEA Community Edition**
-* **Docker**
-* **Gradle**
+### Pré-requisitos
 
-# Arquitetura Proposta
+- Java 21+
+- Docker
 
-[Voltar ao início](#sum%C3%A1rio)
+Não precisa instalar Maven. Cada serviço tem o wrapper (`mvnw` / `mvnw.cmd`), que baixa a versão certa na primeira execução.
 
-Em nossa arquitetura, teremos 5 serviços:
+### Opção 1: tudo no Docker
 
-* **Order-Service**: microsserviço responsável apenas por gerar um pedido inicial, e receber uma notificação. Aqui que teremos endpoints REST para inciar o processo e recuperar os dados dos eventos. O banco de dados utilizado será o MongoDB.
-* **Orchestrator-Service**: microsserviço responsável por orquestrar todo o fluxo de execução da Saga, ele que saberá qual microsserviço foi executado e em qual estado, e para qual será o próximo microsserviço a ser enviado, este microsserviço também irá salvar o processo dos eventos. Este serviço não possui banco de dados.
-* **Product-Validation-Service**: microsserviço responsável por validar se o produto informado no pedido existe e está válido. Este microsserviço guardará a validação de um produto para o ID de um pedido. O banco de dados utilizado será o PostgreSQL.
-* **Payment-Service**: microsserviço responsável por realizar um pagamento com base nos valores unitários e quantidades informadas no pedido. Este microsserviço guardará a informação de pagamento de um pedido. O banco de dados utilizado será o PostgreSQL.
-* **Inventory-Service**: microsserviço responsável por realizar a baixa do estoque dos produtos de um pedido. Este microsserviço guardará a informação da baixa de um produto para o ID de um pedido. O banco de dados utilizado será o PostgreSQL.
+Na raiz do repositório:
 
-Todos os serviços da arquitetura irão subir através do arquivo **docker-compose.yml**.
+```powershell
+docker compose up --build -d
+```
 
-## Execução do projeto
+O build das aplicações acontece dentro das imagens (Dockerfile multi-stage), então a primeira subida demora alguns minutos baixando dependências. As seguintes reaproveitam o cache.
 
-[Voltar ao início](#sum%C3%A1rio)
+Os serviços só sobem depois que o banco deles responde ao healthcheck, e as migrations do Flyway rodam sozinhas na inicialização. Para acompanhar:
 
-Há várias maneiras de executar os projetos:
+```powershell
+docker compose ps
+docker compose logs -f orquestrador-service
+```
 
-1. Executando tudo via `docker-compose`
-2. Executando tudo via `script` de automação que eu disponibilizei (`build.py`)
-3. Executando apenas os serviços de bancos de dados e message broker (Kafka) separadamente
-4. Executando as aplicações manualmente via CLI (`java -jar` ou `gradle bootRun` ou via IntelliJ)
+Para derrubar tudo:
 
-Para rodar as aplicações, será necessário ter instalado:
+```powershell
+docker compose down
+```
 
-* **Docker**
-* **Java 17**
-* **Gradle 7.6 ou superior**
+### Opção 2: infraestrutura no Docker, serviços pela IDE ou terminal
 
-### 01 - Execução geral via docker-compose
+É o jeito mais prático pra desenvolver, porque dá pra debugar um serviço sem rebuildar imagem.
 
-[Voltar ao nível anterior](#execu%C3%A7%C3%A3o-do-projeto)
+**Terminal 1, bancos e Kafka:**
 
-Basta executar o comando no diretório raiz do repositório:
+```powershell
+docker compose up -d pedido-db validacao-livro-db pagamento-db estoque-db kafka redpanda-console
+```
 
-`docker-compose up --build -d`
+**Um terminal por serviço:**
 
-**Obs.: para rodar tudo desta maneira, é necessário realizar o build das 5 aplicações, veja nos passos abaixo sobre como fazer isto.**
+```powershell
+cd orquestrador-service
+.\mvnw.cmd spring-boot:run
+```
 
-### 02 - Execução geral via automação com script em Python
+```powershell
+cd pedido-service
+.\mvnw.cmd spring-boot:run
+```
 
-[Voltar ao nível anterior](#execu%C3%A7%C3%A3o-do-projeto)
+```powershell
+cd validacao-livro-service
+.\mvnw.cmd spring-boot:run
+```
 
-Basta executar o arquivo `build.py`. Para isto, **é necessário ter o Python 3 instalado**.
+```powershell
+cd pagamento-service
+$env:DB_PORT="5433"; .\mvnw.cmd spring-boot:run
+```
 
-Para executar, basta apenas executar o seguinte comando no diretório raiz do repositório:
+```powershell
+cd estoque-service
+$env:DB_PORT="5434"; .\mvnw.cmd spring-boot:run
+```
 
-`python build.py`
+O `DB_PORT` é necessário no pagamento e no estoque porque cada Postgres do compose está numa porta diferente do host (5432, 5433 e 5434), e o padrão das três aplicações é 5432. No Linux ou no Git Bash troque por `DB_PORT=5433 ./mvnw spring-boot:run`.
 
-Será realizado o `build` de todas as aplicações, removidos todos os containers e em sequência, será rodado o `docker-compose`.
+Pela IDE, rode a classe `*Application` de cada serviço e defina `DB_PORT` nas variáveis de ambiente da configuração de execução do pagamento e do estoque.
 
-### 03 - Executando os serviços de bancos de dados e Message Broker
+### Testando o fluxo
 
-[Voltar ao nível anterior](#execu%C3%A7%C3%A3o-do-projeto)
+O jeito mais rápido é o Swagger do pedido-service: http://localhost:3000/swagger-ui.html
 
-Para que seja possível executar os serviços de bancos de dados e Message Broker, como MongoDB, PostgreSQL e Apache Kafka, basta ir no diretório raiz do repositório, onde encontra-se o arquivo `docker-compose.yml` e executar o comando:
+Pelo curl (Git Bash):
 
-`docker-compose up --build -d order-db kafka product-db payment-db inventory-db`
+```bash
+curl -X POST http://localhost:3000/api/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"itens":[{"livro":{"codigo":"DOM_CASMURRO","valorUnitario":39.90},"quantidade":2}]}'
+```
 
-Como queremos rodar apenas os serviços de bancos de dados e Message Broker, é necessário informá-los no comando do `docker-compose`, caso contrário, as aplicações irão subir também.
+A resposta traz o `id` e o `transacaoId` do pedido. Com qualquer um dos dois dá pra acompanhar o resultado:
 
-Para parar todos os containers, basta rodar:
+```bash
+curl "http://localhost:3000/api/eventos?pedidoId=<id do pedido>"
+```
 
-`docker-compose down` 
+Para ver uma saga falhar e fazer rollback, peça mais do que tem em estoque, por exemplo 3 unidades de `O_CORTICO`, que tem 2. Ou um código que não está no catálogo.
 
-Ou então:
+Os livros que já vêm cadastrados pelas migrations:
 
-`docker stop ($docker ps -aq)`
-`docker container prune -f`
+| Código | Título | Estoque |
+|---|---|---|
+| `DOM_CASMURRO` | Dom Casmurro | 4 |
+| `O_CORTICO` | O Cortiço | 2 |
+| `IRACEMA` | Iracema | 5 |
+| `MEMORIAS_POSTUMAS` | Memórias Póstumas de Brás Cubas | 9 |
 
-### 04 - Executando manualmente via CLI
+### Rodando os testes
 
-[Voltar ao nível anterior](#execu%C3%A7%C3%A3o-do-projeto)
+Dentro de cada serviço:
 
-Antes da execução do projeto, realize o `build` da aplicação indo no diretório raiz e executando o comando:
+```powershell
+.\mvnw.cmd test
+```
 
-`gradle build -x test`
+### Endereços
 
-Para executar os projetos com Gradle, basta entrar no diretório raiz de cada projeto, e executar o comando:
+| O quê | Endereço |
+|---|---|
+| pedido-service (API e Swagger) | http://localhost:3000 |
+| orquestrador-service | 8080 |
+| validacao-livro-service | 8090 |
+| pagamento-service | 8091 |
+| estoque-service | 8092 |
+| Redpanda Console | http://localhost:8081 |
+| Kafka | localhost:9092 |
+| MongoDB (pedido-db) | localhost:27017 |
+| PostgreSQL validacao-livro-db / pagamento-db / estoque-db | localhost:5432 / 5433 / 5434 |
 
-`gradle bootRun` 
+Usuário e senha dos bancos de desenvolvimento estão no `docker-compose.yml`.
 
-Ou então, entrar no diretório: `build/libs` e executar o comando:
+---
 
-`java -jar nome_do_jar.jar`
+## Arquitetura
 
-## Acessando a aplicação
+```mermaid
+flowchart LR
+    cliente([Cliente / Swagger])
 
-[Voltar ao início](#sum%C3%A1rio)
+    subgraph pedido [pedido-service :3000]
+        api[API REST]
+    end
+    mongo[(MongoDB<br/>pedido-db)]
 
-Para acessar as aplicações e realizar um pedido, basta acessar a URL:
+    kafka{{Apache Kafka}}
 
-http://localhost:3000/swagger-ui.html
+    orq[orquestrador-service<br/>sem banco]
 
-As aplicações executarão nas seguintes portas:
+    val[validacao-livro-service]
+    pg1[(PostgreSQL<br/>validacao-livro-db)]
 
-* Order-Service: 3000
-* Orchestrator-Service: 8080
-* Product-Validation-Service: 8090
-* Payment-Service: 8091
-* Inventory-Service: 8092
-* Apache Kafka: 9092
-* Redpanda Console: 8081
-* PostgreSQL (Product-DB): 5432
-* PostgreSQL (Payment-DB): 5433
-* PostgreSQL (Inventory-DB): 5434
-* MongoDB (Order-DB): 27017
+    pag[pagamento-service]
+    pg2[(PostgreSQL<br/>pagamento-db)]
 
-## Acessando tópicos com Redpanda Console
+    est[estoque-service]
+    pg3[(PostgreSQL<br/>estoque-db)]
 
-[Voltar ao início](#sum%C3%A1rio)
+    cliente -- HTTP --> api
+    api --- mongo
+    api -- inicio-saga --> kafka
+    kafka -- notificar-fim --> api
 
-Para acessar o Redpanda Console e visualizar tópicos e publicar eventos, basta acessar:
+    kafka <--> orq
+    kafka <--> val
+    kafka <--> pag
+    kafka <--> est
 
-http://localhost:8081
+    val --- pg1
+    pag --- pg2
+    est --- pg3
+```
+
+O único serviço com API para fora é o **pedido-service**. Ele grava o pedido, publica o evento em `inicio-saga` e, no fim, recebe o resultado em `notificar-fim`. Daí pra frente ninguém chama ninguém por HTTP: tudo passa pelo Kafka.
+
+O **orquestrador** é o único que conhece a ordem das etapas. Ele não tem banco, porque não guarda estado: a decisão sai inteira da origem e do status do evento que acabou de chegar, consultando a tabela de transições (`TransicaoSaga`).
 
-## Dados da API
+Os três **participantes** não sabem que os outros existem. Cada um escuta dois tópicos, um para executar a etapa (`*-sucesso`) e outro para desfazê-la (`*-falha`), e sempre responde no mesmo tópico, `orquestrador`. Isso deixa a ordem da saga num lugar só: trocar pagamento e estoque de posição muda uma tabela no orquestrador, e nenhum participante.
 
-[Voltar ao início](#sum%C3%A1rio)
+Cada serviço tem o próprio banco e nenhum lê o banco do outro. O que um serviço precisa saber do pedido chega dentro do evento.
 
-É necessário conhecer o payload de envio ao fluxo da saga, assim como os produtos cadastrados e suas quantidades.
+| Serviço | Responsabilidade | Banco |
+|---|---|---|
+| pedido-service | Recebe o pedido, inicia a saga e guarda o histórico final | MongoDB |
+| orquestrador-service | Decide o próximo tópico a partir da origem e do status | nenhum |
+| validacao-livro-service | Confere se todos os livros existem no catálogo | PostgreSQL |
+| pagamento-service | Calcula os totais, aprova e estorna o pagamento | PostgreSQL |
+| estoque-service | Baixa e restaura o estoque de cada livro | PostgreSQL |
 
-### Produtos registrados e seu estoque
+---
 
-[Voltar ao nível anterior](#dados-da-api)
+## Como a saga funciona
 
-Existem 3 produtos iniciais cadastrados no serviço `product-validation-service` e suas quantidades disponíveis em `inventory-service`: 
+### Caminho feliz
 
-* **COMIC_BOOKS** (4 em estoque)
-* **BOOKS** (2 em estoque)
-* **MOVIES** (5 em estoque)
-* **MUSIC** (9 em estoque)
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant P as pedido-service
+    participant O as orquestrador
+    participant V as validacao-livro
+    participant G as pagamento
+    participant E as estoque
 
-### Endpoint para iniciar a saga:
+    C->>P: POST /api/pedidos
+    P->>P: grava pedido e evento no MongoDB
+    P-->>C: 201 com id e transacaoId
+    P->>O: inicio-saga
+    O->>V: validacao-livro-sucesso
+    V->>O: orquestrador (SUCESSO)
+    O->>G: pagamento-sucesso
+    G->>O: orquestrador (SUCESSO)
+    O->>E: estoque-sucesso
+    E->>O: orquestrador (SUCESSO)
+    O->>O: fim-sucesso
+    O->>P: notificar-fim
+    P->>P: grava o evento final com o histórico completo
+```
 
-[Voltar ao nível anterior](#dados-da-api)
+A resposta do `POST` sai antes da saga terminar. O cliente recebe o pedido criado e acompanha o resultado pelo `GET /api/eventos`. É a consistência eventual na prática: por alguns instantes o pedido existe sem ter sido pago.
 
-**POST** http://localhost:3000/api/order
+### Quando uma etapa falha
 
-Payload:
+O status do evento diz ao orquestrador o que fazer:
+
+| Status | Significado | O orquestrador manda para |
+|---|---|---|
+| `SUCESSO` | A etapa terminou | a próxima etapa |
+| `ROLLBACK_PENDENTE` | A etapa falhou e pode ter deixado algo pela metade | o tópico de falha do **mesmo** serviço |
+| `FALHA` | A etapa foi desfeita | o tópico de falha do serviço **anterior** |
+
+Exemplo com 3 unidades de `O_CORTICO`, que só tem 2 em estoque:
+
+```mermaid
+sequenceDiagram
+    participant O as orquestrador
+    participant V as validacao-livro
+    participant G as pagamento
+    participant E as estoque
+    participant P as pedido-service
+
+    Note over V,G: validação e pagamento já aprovados
+    O->>E: estoque-sucesso
+    E->>O: ROLLBACK_PENDENTE (estoque insuficiente)
+    O->>E: estoque-falha
+    E->>O: FALHA (estoque restaurado)
+    O->>G: pagamento-falha
+    G->>O: FALHA (pagamento estornado)
+    O->>V: validacao-livro-falha
+    V->>O: FALHA (validação marcada como falha)
+    O->>O: fim-falha
+    O->>P: notificar-fim
+```
+
+Cada passo entra no `historico` do evento com a origem, o status e a mensagem, então o `GET /api/eventos` mostra exatamente onde a saga parou e por quê.
+
+### Tabela de transições
+
+É o conteúdo do enum `TransicaoSaga` no orquestrador:
+
+| Origem | Status | Próximo tópico |
+|---|---|---|
+| `ORQUESTRADOR` | `SUCESSO` | `validacao-livro-sucesso` |
+| `ORQUESTRADOR` | `FALHA` | `fim-falha` |
+| `VALIDACAO_LIVRO_SERVICE` | `SUCESSO` | `pagamento-sucesso` |
+| `VALIDACAO_LIVRO_SERVICE` | `ROLLBACK_PENDENTE` | `validacao-livro-falha` |
+| `VALIDACAO_LIVRO_SERVICE` | `FALHA` | `fim-falha` |
+| `PAGAMENTO_SERVICE` | `SUCESSO` | `estoque-sucesso` |
+| `PAGAMENTO_SERVICE` | `ROLLBACK_PENDENTE` | `pagamento-falha` |
+| `PAGAMENTO_SERVICE` | `FALHA` | `validacao-livro-falha` |
+| `ESTOQUE_SERVICE` | `SUCESSO` | `fim-sucesso` |
+| `ESTOQUE_SERVICE` | `ROLLBACK_PENDENTE` | `estoque-falha` |
+| `ESTOQUE_SERVICE` | `FALHA` | `pagamento-falha` |
+
+Antes isso era uma matriz `Object[][]` percorrida por índice e com cast. Virou enum porque o compilador passa a conferir os tipos, e a tabela fica legível do jeito que está acima.
+
+### A mesma transação não é processada duas vezes
+
+O Kafka entrega pelo menos uma vez, então uma mensagem pode chegar repetida. Antes de executar, cada participante confere se já existe registro para o par `pedidoId` + `transacaoId` (`VALIDACAO_DUPLICADA`, `PAGAMENTO_DUPLICADO`, `MOVIMENTACAO_DUPLICADA`). Se existir, a etapa não roda de novo e o participante responde com `ROLLBACK_PENDENTE`. Isso impede cobrar ou baixar o estoque duas vezes, mas tem um custo, descrito em [O que ainda daria pra melhorar](#o-que-ainda-daria-pra-melhorar).
+
+---
+
+## Por que MongoDB no pedido-service
+
+O que o pedido-service guarda é o **evento da saga**: o pedido com os itens, o status atual e o histórico, que cresce a cada etapa. É um documento único, que nasce inteiro, é lido inteiro e é substituído inteiro no fim. Ninguém consulta só um item ou só uma linha do histórico.
+
+```
+evento
+├── pedido
+│   └── itens[]
+│       └── livro
+└── historico[]
+```
+
+Num banco relacional isso viraria quatro tabelas (`evento`, `pedido`, `item_pedido`, `historico`) e um join toda vez que alguém pede o evento, só pra remontar o JSON que já chegou pronto do Kafka. No MongoDB o JSON do evento é gravado como chegou.
+
+Pesou também:
+
+- **O formato do evento muda junto com a saga.** Quando uma etapa nova acrescenta um campo ao evento, o documento aceita sem migration.
+- **A gravação final é uma troca do documento inteiro.** O evento volta do orquestrador com o mesmo `id` com que saiu, e o `save` substitui o documento inicial pelo final, com o histórico completo. Uma saga, um documento.
+- **As consultas são por chave.** O `GET /api/eventos` busca pelo `pedidoId` ou pelo `transacaoId`, pega o mais recente, e só.
+
+### E por que PostgreSQL nos outros três
+
+Validação, pagamento e estoque guardam dado com regra. O estoque precisa de um número disponível que não pode ficar negativo, e de movimentações ligadas ao estoque por chave estrangeira. O catálogo precisa de código único. O pagamento tem status que muda de `PENDENTE` para `APROVADO` ou `ESTORNADO`. São estruturas fixas, com restrição de integridade, que o banco relacional garante sozinho.
+
+Como cada serviço é dono do próprio banco, essa escolha é por serviço, e não do sistema inteiro.
+
+---
+
+## Estrutura do projeto
+
+Cada serviço é organizado por domínio, no mesmo padrão do `paytrack-card-service`. Exemplo do pagamento:
+
+```
+pagamento-service/src/main/java/com/livraria/pagamento/
+├── pagamento/        Pagamento, StatusPagamento, service, consumer,
+│                     repository e exceptions/
+├── saga/             contrato do evento (Evento, Pedido, ItemPedido, Livro,
+│                     Historico, StatusSaga), ConversorJson e o producer
+└── shared/
+    ├── config/       ClockConfig e criação dos tópicos
+    └── exception/    IErroPadrao, ErrorDTO e DefaultExceptionHandler
+```
+
+| Serviço | Pacotes de domínio |
+|---|---|
+| pedido-service | `pedido/`, `evento/` |
+| orquestrador-service | `orquestracao/` |
+| validacao-livro-service | `catalogo/`, `validacao/` |
+| pagamento-service | `pagamento/` |
+| estoque-service | `estoque/` |
+
+## Migrations
+
+```
+validacao-livro-service
+  V1  livro, validacao             →  catálogo com código único e o registro de cada validação
+  V2  carga inicial dos livros
+
+pagamento-service
+  V1  pagamento
+
+estoque-service
+  V1  estoque, movimentacao_estoque  →  movimentação com FK para o estoque
+  V2  carga inicial do estoque
+```
+
+`ddl-auto=validate` está ligado nos três. O Hibernate não altera estrutura nenhuma, quem faz isso é o Flyway, e campo novo na entidade sem a migration correspondente derruba o serviço na inicialização.
+
+---
+
+## Modelo de dados
+
+**pedido-db (MongoDB)**
+
+- `pedido`: itens, `transacaoId`, data de criação.
+- `evento`: o pedido inteiro, origem, status e o histórico de cada etapa.
+
+**validacao-livro-db**
+
+- `livro`: código único e título. É o catálogo.
+- `validacao`: `pedido_id`, `transacao_id` e se a validação passou.
+
+**pagamento-db**
+
+- `pagamento`: `pedido_id`, `transacao_id`, quantidade e valor total, status (`PENDENTE`, `APROVADO`, `ESTORNADO`).
+
+**estoque-db**
+
+```
+estoque (1) ──── (N) movimentacao_estoque
+```
+
+- `estoque`: código do livro e quantidade disponível.
+- `movimentacao_estoque`: quantidade pedida, a quantidade anterior e a nova. O rollback usa a anterior para devolver o estoque ao que era.
+
+O `codigo` do livro é o identificador entre os serviços. O catálogo e o estoque não compartilham tabela, e quem liga um ao outro é o código que vem no evento. A busca por ele usa o índice que o PostgreSQL cria para a restrição `UNIQUE`.
+
+---
+
+## Decisões técnicas
+
+### O contrato do evento é copiado em cada serviço
+
+`Evento`, `Pedido`, `ItemPedido`, `Livro` e `Historico` existem no pacote `saga/` de cada serviço. Não virou biblioteca compartilhada de propósito: uma lib em comum acoplaria a versão de deploy de todos os serviços.
+
+O custo é que um campo novo no evento precisa ir para **todos** os serviços que repassam o evento, e não só para quem o usa. O orquestrador e os participantes desserializam e serializam o evento de novo, e o campo que a classe não conhece se perde no caminho.
+
+### As regras ficam no modelo
+
+`Pagamento.aprovar()` recusa valor abaixo do mínimo, `Estoque.baixar()` recusa quantidade maior que a disponível e `Pedido` não nasce sem itens. O service orquestra a etapa e o modelo diz o que pode ou não acontecer, então a regra é testada sem mock nenhum.
+
+### Uma exceção por regra, e a mensagem vai pro histórico
+
+Cada regra tem a sua exceção implementando `IErroPadrao`, que devolve um `ErrorDTO` com código e mensagem. No pedido-service isso vira resposta HTTP pelo `DefaultExceptionHandler`. Nos participantes, que não têm cliente HTTP, a mesma mensagem vai para o histórico do evento: `Falha ao atualizar o estoque: Estoque insuficiente para o livro.`
+
+### O relógio é injetado
+
+Toda data vem de um `Clock` injetado (`ClockConfig`), e os testes usam `Clock.fixed`. As datas do histórico e o `transacaoId` saem previsíveis no teste.
+
+---
+
+## Endpoints
+
+Todos no pedido-service (`localhost:3000`):
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| POST | `/api/pedidos` | Cria o pedido e inicia a saga. `201` com id e `transacaoId` |
+| GET | `/api/eventos?pedidoId=` | Evento mais recente do pedido |
+| GET | `/api/eventos?transacaoId=` | Evento mais recente da transação |
+| GET | `/api/eventos/todos` | Todos os eventos, do mais recente para o mais antigo |
+
+Corpo do `POST /api/pedidos`:
 
 ```json
 {
-  "products": [
-    {
-      "product": {
-        "code": "COMIC_BOOKS",
-        "unitValue": 15.50
-      },
-      "quantity": 3
-    },
-    {
-      "product": {
-        "code": "BOOKS",
-        "unitValue": 9.90
-      },
-      "quantity": 1
-    }
+  "itens": [
+    { "livro": { "codigo": "DOM_CASMURRO", "valorUnitario": 39.90 }, "quantidade": 2 },
+    { "livro": { "codigo": "IRACEMA", "valorUnitario": 25.00 }, "quantidade": 1 }
   ]
 }
 ```
 
-Resposta:
-
-```json
-{
-  "id": "64429e987a8b646915b3735f",
-  "products": [
-    {
-      "product": {
-        "code": "COMIC_BOOKS",
-        "unitValue": 15.5
-      },
-      "quantity": 3
-    },
-    {
-      "product": {
-        "code": "BOOKS",
-        "unitValue": 9.9
-      },
-      "quantity": 1
-    }
-  ],
-  "createdAt": "2023-04-21T14:32:56.335943085",
-  "transactionId": "1682087576536_99d2ca6c-f074-41a6-92e0-21700148b519"
-}
-```
-
-### Endpoint para visualizar a saga:
-
-[Voltar ao nível anterior](#dados-da-api)
-
-É possível recuperar os dados da saga pelo **orderId** ou pelo **transactionId**, o resultado será o mesmo:
-
-**GET** http://localhost:3000/api/event?orderId=64429e987a8b646915b3735f
-
-**GET** http://localhost:3000/api/event?transactionId=1682087576536_99d2ca6c-f074-41a6-92e0-21700148b519
-
-Resposta:
+A resposta do `POST` vem com `valorTotal` e `quantidadeTotal` zerados. Quem calcula os totais é o pagamento, e eles aparecem no evento final:
 
 ```json
 {
   "id": "64429e9a7a8b646915b37360",
-  "transactionId": "1682087576536_99d2ca6c-f074-41a6-92e0-21700148b519",
-  "orderId": "64429e987a8b646915b3735f",
-  "payload": {
+  "transacaoId": "1760263976536_99d2ca6c-f074-41a6-92e0-21700148b519",
+  "pedidoId": "64429e987a8b646915b3735f",
+  "pedido": {
     "id": "64429e987a8b646915b3735f",
-    "products": [
-      {
-        "product": {
-          "code": "COMIC_BOOKS",
-          "unitValue": 15.5
-        },
-        "quantity": 3
-      },
-      {
-        "product": {
-          "code": "BOOKS",
-          "unitValue": 9.9
-        },
-        "quantity": 1
-      }
+    "itens": [
+      { "livro": { "codigo": "DOM_CASMURRO", "valorUnitario": 39.9 }, "quantidade": 2 },
+      { "livro": { "codigo": "IRACEMA", "valorUnitario": 25.0 }, "quantidade": 1 }
     ],
-    "totalAmount": 56.40,
-    "totalItems": 4,
-    "createdAt": "2023-04-21T14:32:56.335943085",
-    "transactionId": "1682087576536_99d2ca6c-f074-41a6-92e0-21700148b519"
+    "valorTotal": 104.8,
+    "quantidadeTotal": 3
   },
-  "source": "ORCHESTRATOR",
-  "status": "SUCCESS",
-  "eventHistory": [
-    {
-      "source": "ORCHESTRATOR",
-      "status": "SUCCESS",
-      "message": "Saga started!",
-      "createdAt": "2023-04-21T14:32:56.78770516"
-    },
-    {
-      "source": "PRODUCT_VALIDATION_SERVICE",
-      "status": "SUCCESS",
-      "message": "Products are validated successfully!",
-      "createdAt": "2023-04-21T14:32:57.169378616"
-    },
-    {
-      "source": "PAYMENT_SERVICE",
-      "status": "SUCCESS",
-      "message": "Payment realized successfully!",
-      "createdAt": "2023-04-21T14:32:57.617624655"
-    },
-    {
-      "source": "INVENTORY_SERVICE",
-      "status": "SUCCESS",
-      "message": "Inventory updated successfully!",
-      "createdAt": "2023-04-21T14:32:58.139176809"
-    },
-    {
-      "source": "ORCHESTRATOR",
-      "status": "SUCCESS",
-      "message": "Saga finished successfully!",
-      "createdAt": "2023-04-21T14:32:58.248630293"
-    }
-  ],
-  "createdAt": "2023-04-21T14:32:58.28"
+  "origem": "ORQUESTRADOR",
+  "status": "SUCESSO",
+  "historico": [
+    { "origem": "ORQUESTRADOR", "status": "SUCESSO", "mensagem": "Saga iniciada." },
+    { "origem": "VALIDACAO_LIVRO_SERVICE", "status": "SUCESSO", "mensagem": "Livros validados com sucesso." },
+    { "origem": "PAGAMENTO_SERVICE", "status": "SUCESSO", "mensagem": "Pagamento realizado com sucesso." },
+    { "origem": "ESTOQUE_SERVICE", "status": "SUCESSO", "mensagem": "Estoque atualizado com sucesso." },
+    { "origem": "ORQUESTRADOR", "status": "SUCESSO", "mensagem": "Saga finalizada com sucesso." }
+  ]
 }
 ```
 
-### Acesso ao MongoDB
+Datas omitidas no exemplo.
 
-[Voltar ao início](#sum%C3%A1rio)
+### Erros da API
 
-Para conectar-se ao MongoDB via linha de comando (cli) diretamente do docker-compose, basta executar o comando abaixo:
+Todo erro sai no mesmo formato:
 
-**docker exec -it order-db mongosh "mongodb://admin:123456@localhost:27017"**
+```json
+{ "code": "FILTRO_NAO_INFORMADO", "message": "Informe o pedidoId ou o transacaoId." }
+```
 
-Para listar os bancos de dados existentes:
+| Código | HTTP | Quando |
+|---|---|---|
+| `PEDIDO_SEM_ITENS` | 400 | Pedido sem nenhum item |
+| `FILTRO_NAO_INFORMADO` | 400 | Consulta de evento sem `pedidoId` e sem `transacaoId` |
+| `EVENTO_NAO_ENCONTRADO` | 404 | Nenhum evento para o filtro informado |
+| `CORPO_INVALIDO` | 400 | JSON malformado |
+| `ROTA_NAO_ENCONTRADA` / `METODO_NAO_PERMITIDO` | 404 / 405 | URL ou verbo errado |
+| `ERRO_NAO_MAPEADO` | 500 | O que não foi previsto |
 
-**show dbs**
+### Falhas registradas no histórico da saga
 
-Para selecionar um banco de dados:
+| Código | Serviço | Quando |
+|---|---|---|
+| `LIVRO_NAO_CADASTRADO` | validação | Código fora do catálogo |
+| `LIVRO_NAO_INFORMADO` | validação | Item sem livro ou sem código |
+| `PEDIDO_NAO_IDENTIFICADO` | validação | Evento sem id do pedido ou sem transação |
+| `VALOR_MINIMO_NAO_ATINGIDO` | pagamento | Total abaixo de R$ 0,10 |
+| `PAGAMENTO_NAO_ENCONTRADO` | pagamento | Estorno sem pagamento registrado |
+| `ESTOQUE_INSUFICIENTE` | estoque | Quantidade maior que a disponível |
+| `ESTOQUE_NAO_ENCONTRADO` | estoque | Livro sem estoque cadastrado |
+| `*_DUPLICADA` / `*_DUPLICADO` | todos | Transação já processada |
 
-**use admin**
+---
 
-Para visualizar as collections do banco:
+## Configuração
 
-**show collections**
+Cada serviço lê as conexões de variável de ambiente, com padrão para desenvolvimento local:
 
-Para realizar queries e validar se os dados existem:
+| Variável | Serviços | Padrão |
+|---|---|---|
+| `KAFKA_BROKER` | todos | `localhost:9092` |
+| `MONGO_DB_URI` | pedido | `mongodb://admin:123456@localhost:27017` |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` | validação, pagamento, estoque | `localhost` / `5432` / nome do banco do serviço |
+| `DB_USER` / `DB_PASSWORD` | validação, pagamento, estoque | `postgres` / `postgres` |
 
-**db.order.find()**
+No `docker-compose.yml` essas variáveis já apontam para os containers. As senhas versionadas são de desenvolvimento e não valem nada como segredo.
 
-**db.event.find()**
+---
 
-**db.order.find(id=ObjectId("65006786d715e21bd38d1634"))**
+## O que ainda daria pra melhorar
 
-**db.order.find({ "products.product.code": "COMIC_BOOKS"})**
+**Gravar e publicar não é atômico.** O pedido-service salva no MongoDB e depois publica no Kafka. Se o processo cair entre os dois, fica um pedido sem saga. O mesmo vale para os participantes, que gravam no banco e depois respondem ao orquestrador. O padrão Outbox resolve: gravar o evento numa tabela na mesma transação e publicar a partir dela.
+
+**O estado intermediário não aparece no pedido.** O pedido-service grava o evento no início e no fim. Enquanto a saga roda, o `GET /api/eventos` mostra o evento inicial, sem o histórico das etapas já concluídas.
+
+Além disso:
+
+- **Mensagem repetida derruba a saga.** A checagem de duplicidade protege o dado, mas responde com `ROLLBACK_PENDENTE`, e o rollback desfaz uma etapa que tinha dado certo. O ideal é a etapa repetida devolver o mesmo resultado da primeira vez.
+- **Baixa de estoque sem transação.** Num pedido com vários livros, cada item é baixado e salvo separadamente. Se o segundo falhar, o primeiro já foi baixado e depende do rollback da saga para voltar. `@Transactional` na etapa deixaria a baixa toda ou nada.
+- **Teste de integração.** Os testes cobrem service e modelo. Testcontainers com Kafka e PostgreSQL provaria a saga de ponta a ponta e as migrations contra um banco de verdade.
+- **Mensagem que não converte.** Um JSON inválido no tópico cai no tratamento padrão do Spring Kafka, que tenta de novo e descarta. Um tópico de mensagens mortas (DLT) guardaria essas mensagens para análise.
 
 ## Autor
 
