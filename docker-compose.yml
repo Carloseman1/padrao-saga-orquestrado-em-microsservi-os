@@ -1,67 +1,82 @@
-version: '3'
-
 services:
-  
-  order-db:
-    image: mongo:latest
-    container_name: order-db
+
+  pedido-db:
+    image: mongo:7
+    container_name: pedido-db
     restart: always
     networks:
-      - orchestrator-saga
+      - livraria-saga
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=123456
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: 123456
     ports:
-      - 27017:27017
-  
-  product-db:
-    container_name: product-db
-    image: postgres:latest
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  validacao-livro-db:
+    image: postgres:16-alpine
+    container_name: validacao-livro-db
+    networks:
+      - livraria-saga
     environment:
-      POSTGRES_DB: product-db
+      POSTGRES_DB: validacao-livro-db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      PGDATA: /data/postgres
-    networks:
-      - orchestrator-saga
     ports:
       - "5432:5432"
-  
-  payment-db:
-    container_name: payment-db
-    image: postgres:latest
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d validacao-livro-db"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  pagamento-db:
+    image: postgres:16-alpine
+    container_name: pagamento-db
+    networks:
+      - livraria-saga
     environment:
-      POSTGRES_DB: payment-db
+      POSTGRES_DB: pagamento-db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      PGDATA: /data/postgres
-    networks:
-      - orchestrator-saga
     ports:
       - "5433:5432"
-  
-  inventory-db:
-    container_name: inventory-db
-    image: postgres:latest
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pagamento-db"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  estoque-db:
+    image: postgres:16-alpine
+    container_name: estoque-db
+    networks:
+      - livraria-saga
     environment:
-      POSTGRES_DB: inventory-db
+      POSTGRES_DB: estoque-db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      PGDATA: /data/postgres
-    networks:
-      - orchestrator-saga
     ports:
       - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d estoque-db"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   kafka:
-    container_name: kafka
     image: obsidiandynamics/kafka
+    container_name: kafka
     restart: "no"
     ports:
       - "2181:2181"
       - "9092:9092"
     networks:
-      - orchestrator-saga
+      - livraria-saga
     environment:
       KAFKA_LISTENERS: "INTERNAL://:29092,EXTERNAL://:9092"
       KAFKA_ADVERTISED_LISTENERS: "INTERNAL://kafka:29092,EXTERNAL://localhost:9092"
@@ -75,103 +90,111 @@ services:
       - ./data/kafka/data:/var/lib/kafka/data
 
   redpanda-console:
-    container_name: redpanda
     image: docker.redpanda.com/redpandadata/console:v2.3.8
+    container_name: redpanda
     restart: on-failure
     entrypoint: /bin/sh
     command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
     ports:
       - "8081:8080"
     networks:
-      - orchestrator-saga
+      - livraria-saga
     environment:
       CONFIG_FILEPATH: /tmp/config.yml
       CONSOLE_CONFIG_FILE: |
         kafka:
           brokers: ["kafka:29092"]
     depends_on:
-      - "kafka"
+      - kafka
 
-  order-service:
-    build: './order-service'
-    container_name: order-service
+  pedido-service:
+    build: ./pedido-service
+    container_name: pedido-service
     depends_on:
-      - order-db
+      pedido-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - livraria-saga
+    environment:
+      KAFKA_BROKER: kafka:29092
+      MONGO_DB_URI: mongodb://admin:123456@pedido-db:27017
+    ports:
+      - "3000:3000"
+
+  orquestrador-service:
+    build: ./orquestrador-service
+    container_name: orquestrador-service
+    depends_on:
       - kafka
     networks:
-      - orchestrator-saga
+      - livraria-saga
     environment:
-      - KAFKA_BROKER=kafka:29092
-      - MONGO_DB_URI=mongodb://admin:123456@order-db:27017
+      KAFKA_BROKER: kafka:29092
     ports:
-      - 3000:3000
+      - "8080:8080"
 
-  orchestrator-service:
-    build: './orchestrator-service'
-    container_name: orchestrator-service
+  validacao-livro-service:
+    build: ./validacao-livro-service
+    container_name: validacao-livro-service
     depends_on:
-      - kafka
+      validacao-livro-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
-      - orchestrator-saga
+      - livraria-saga
     environment:
-      - KAFKA_BROKER=kafka:29092
+      KAFKA_BROKER: kafka:29092
+      DB_HOST: validacao-livro-db
+      DB_PORT: 5432
+      DB_NAME: validacao-livro-db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
     ports:
-      - 8080:8080
+      - "8090:8090"
 
-  product-validation-service:
-    build: './product-validation-service'
-    container_name: product-validation-service
+  pagamento-service:
+    build: ./pagamento-service
+    container_name: pagamento-service
     depends_on:
-      - product-db
-      - kafka
+      pagamento-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
-      - orchestrator-saga
+      - livraria-saga
     environment:
-      - KAFKA_BROKER=kafka:29092
-      - DB_HOST=product-db
-      - DB_PORT=5432
-      - DB_NAME=product-db
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      KAFKA_BROKER: kafka:29092
+      DB_HOST: pagamento-db
+      DB_PORT: 5432
+      DB_NAME: pagamento-db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
     ports:
-      - 8090:8090
+      - "8091:8091"
 
-  payment-service:
-    build: './payment-service'
-    container_name: payment-service
+  estoque-service:
+    build: ./estoque-service
+    container_name: estoque-service
     depends_on:
-      - payment-db
-      - kafka
+      estoque-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
-      - orchestrator-saga
+      - livraria-saga
     environment:
-      - KAFKA_BROKER=kafka:29092
-      - DB_HOST=payment-db
-      - DB_PORT=5432
-      - DB_NAME=payment-db
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
+      KAFKA_BROKER: kafka:29092
+      DB_HOST: estoque-db
+      DB_PORT: 5432
+      DB_NAME: estoque-db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
     ports:
-      - 8091:8091
-
-  inventory-service:
-    build: './inventory-service'
-    container_name: inventory-service
-    depends_on:
-      - inventory-db
-      - kafka
-    networks:
-      - orchestrator-saga
-    environment:
-      - KAFKA_BROKER=kafka:29092
-      - DB_HOST=inventory-db
-      - DB_PORT=5432
-      - DB_NAME=inventory-db
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-    ports:
-      - 8092:8092
+      - "8092:8092"
 
 networks:
-  orchestrator-saga:
+  livraria-saga:
     driver: bridge
