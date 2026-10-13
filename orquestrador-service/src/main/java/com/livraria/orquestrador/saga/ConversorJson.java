@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.livraria.orquestrador.saga.exceptions.JsonInvalidoException;
+import com.livraria.orquestrador.saga.exceptions.VersaoNaoSuportadaException;
 
 @Component
 public class ConversorJson {
@@ -15,17 +16,27 @@ public class ConversorJson {
         this.objectMapper = objectMapper;
     }
 
-    public String paraJson(Object objeto) {
+    public String paraJson(Evento evento) {
         try {
-            return objectMapper.writeValueAsString(objeto);
+            return objectMapper.writeValueAsString(evento);
         } catch (JsonProcessingException ex) {
             throw new JsonInvalidoException(ex);
         }
     }
 
-    public <T> T paraObjeto(String json, Class<T> tipo) {
+    public Evento paraEvento(String json) {
+        Evento evento = ler(json);
+
+        if (!evento.versaoSuportada()) {
+            throw new VersaoNaoSuportadaException(evento.getVersao());
+        }
+
+        return evento;
+    }
+
+    private Evento ler(String json) {
         try {
-            return objectMapper.readValue(json, tipo);
+            return objectMapper.readValue(json, Evento.class);
         } catch (JsonProcessingException ex) {
             throw new JsonInvalidoException(ex);
         }

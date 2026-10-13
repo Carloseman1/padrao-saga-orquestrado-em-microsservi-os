@@ -16,8 +16,11 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(of = "id")
 public class Evento {
 
+    public static final int VERSAO_ATUAL = 1;
+
     @Id
     private String id;
+    private Integer versao;
     private String transacaoId;
     private String pedidoId;
     private Pedido pedido;
@@ -30,10 +33,15 @@ public class Evento {
     }
 
     public Evento(Pedido pedido, LocalDateTime criadoEm) {
+        this.versao = VERSAO_ATUAL;
         this.pedidoId = pedido.getId();
         this.transacaoId = pedido.getTransacaoId();
         this.pedido = pedido;
         this.criadoEm = criadoEm;
+    }
+
+    public boolean versaoSuportada() {
+        return versao != null && versao == VERSAO_ATUAL;
     }
 
     public void registrarFim(LocalDateTime agora) {

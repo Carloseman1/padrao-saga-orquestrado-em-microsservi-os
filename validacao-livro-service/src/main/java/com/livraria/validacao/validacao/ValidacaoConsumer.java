@@ -6,7 +6,6 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import com.livraria.validacao.saga.ConversorJson;
-import com.livraria.validacao.saga.Evento;
 
 @Component
 public class ValidacaoConsumer {
@@ -24,12 +23,12 @@ public class ValidacaoConsumer {
     @KafkaListener(topics = "${app.kafka.topico.validacao-livro-sucesso}")
     public void validar(String payload) {
         log.info("Recebendo evento para validar livros: {}", payload);
-        validacaoService.validar(conversorJson.paraObjeto(payload, Evento.class));
+        validacaoService.validar(conversorJson.paraEvento(payload));
     }
 
     @KafkaListener(topics = "${app.kafka.topico.validacao-livro-falha}")
     public void desfazer(String payload) {
         log.info("Recebendo evento de rollback da validacao de livros: {}", payload);
-        validacaoService.desfazer(conversorJson.paraObjeto(payload, Evento.class));
+        validacaoService.desfazer(conversorJson.paraEvento(payload));
     }
 }

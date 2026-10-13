@@ -6,7 +6,6 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import com.livraria.pagamento.saga.ConversorJson;
-import com.livraria.pagamento.saga.Evento;
 
 @Component
 public class PagamentoConsumer {
@@ -24,12 +23,12 @@ public class PagamentoConsumer {
     @KafkaListener(topics = "${app.kafka.topico.pagamento-sucesso}")
     public void realizar(String payload) {
         log.info("Recebendo evento para realizar pagamento: {}", payload);
-        pagamentoService.realizar(conversorJson.paraObjeto(payload, Evento.class));
+        pagamentoService.realizar(conversorJson.paraEvento(payload));
     }
 
     @KafkaListener(topics = "${app.kafka.topico.pagamento-falha}")
     public void estornar(String payload) {
         log.info("Recebendo evento de estorno do pagamento: {}", payload);
-        pagamentoService.estornar(conversorJson.paraObjeto(payload, Evento.class));
+        pagamentoService.estornar(conversorJson.paraEvento(payload));
     }
 }

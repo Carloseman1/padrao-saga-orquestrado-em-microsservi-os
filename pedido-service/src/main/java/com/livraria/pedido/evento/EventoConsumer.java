@@ -23,6 +23,6 @@ public class EventoConsumer {
     @KafkaListener(topics = "${app.kafka.topico.notificar-fim}")
     public void notificarFim(String payload) {
         log.info("Recebendo notificacao de fim da saga: {}", payload);
-        eventoService.notificarFim(conversorJson.paraObjeto(payload, Evento.class));
+        eventoService.notificarFim(conversorJson.paraEvento(payload));
     }
 }

@@ -6,7 +6,6 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 import com.livraria.estoque.saga.ConversorJson;
-import com.livraria.estoque.saga.Evento;
 
 @Component
 public class EstoqueConsumer {
@@ -24,12 +23,12 @@ public class EstoqueConsumer {
     @KafkaListener(topics = "${app.kafka.topico.estoque-sucesso}")
     public void baixar(String payload) {
         log.info("Recebendo evento para baixar estoque: {}", payload);
-        estoqueService.baixar(conversorJson.paraObjeto(payload, Evento.class));
+        estoqueService.baixar(conversorJson.paraEvento(payload));
     }
 
     @KafkaListener(topics = "${app.kafka.topico.estoque-falha}")
     public void desfazer(String payload) {
         log.info("Recebendo evento de rollback do estoque: {}", payload);
-        estoqueService.desfazer(conversorJson.paraObjeto(payload, Evento.class));
+        estoqueService.desfazer(conversorJson.paraEvento(payload));
     }
 }
