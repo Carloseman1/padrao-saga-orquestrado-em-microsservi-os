@@ -35,7 +35,25 @@ Projeto de estudo de arquitetura de microsserviços, comunicação assíncrona c
 
 Não precisa instalar Maven. Cada serviço tem o wrapper (`mvnw` / `mvnw.cmd`), que baixa a versão certa na primeira execução.
 
-### Opção 1: tudo no Docker
+### Opção 1: tudo no Docker pelo script
+
+Na raiz do repositório, com Python 3 instalado (no Windows o comando é `py`):
+
+```powershell
+py build.py
+```
+
+O script derruba só os containers deste projeto, avisa se alguma porta já está ocupada por outro processo, sobe tudo com `docker compose up --build -d` e espera cada serviço iniciar, mostrando quem subiu e quem falhou.
+
+| Comando | O que faz |
+|---|---|
+| `py build.py` | Sobe tudo |
+| `py build.py --testes` | Roda os testes dos cinco serviços antes e não sobe nada se algum falhar |
+| `py build.py --parar` | Derruba os containers |
+
+Com o projeto no Docker, não rode os serviços também pelo `mvnw`: as portas já estão ocupadas pelos containers.
+
+### Opção 1b: tudo no Docker sem o script
 
 Na raiz do repositório:
 
