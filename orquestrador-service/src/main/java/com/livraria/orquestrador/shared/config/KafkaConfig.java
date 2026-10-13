@@ -13,10 +13,16 @@ import com.livraria.orquestrador.orquestracao.Topico;
 @Configuration
 public class KafkaConfig {
 
+    private static final int PARTICOES = 1;
+    private static final int REPLICAS = 1;
+
     @Bean
     public KafkaAdmin.NewTopics topicos() {
         return new KafkaAdmin.NewTopics(Arrays.stream(Topico.values())
-                .map(topico -> TopicBuilder.name(topico.getNome()).build())
+                .map(topico -> TopicBuilder.name(topico.getNome())
+                        .partitions(PARTICOES)
+                        .replicas(REPLICAS)
+                        .build())
                 .toArray(NewTopic[]::new));
     }
 }
