@@ -1,0 +1,32 @@
+{
+  "versao": 1,
+  "id": "evento-1",
+  "pedidoId": "pedido-1",
+  "transacaoId": "transacao-1",
+  "pedido": {
+    "id": "pedido-1",
+    "itens": [
+      {
+        "livro": { "codigo": "DOM_CASMURRO", "valorUnitario": 39.90 },
+        "quantidade": 2
+      }
+    ],
+    "transacaoId": "transacao-1",
+    "valorTotal": 79.80,
+    "quantidadeTotal": 2,
+    "criadoEm": "2026-10-13T10:00:05",
+    "campoNovoNoPedido": "precisa chegar ao próximo serviço"
+  },
+  "origem": "ORQUESTRADOR",
+  "status": "SUCESSO",
+  "historico": [
+    {
+      "origem": "ORQUESTRADOR",
+      "status": "SUCESSO",
+      "mensagem": "Saga iniciada.",
+      "criadoEm": "2026-10-13T10:00:06"
+    }
+  ],
+  "criadoEm": "2026-10-13T10:00:05",
+  "campoNovoNoEvento": "precisa chegar ao próximo serviço"
+}
