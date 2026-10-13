@@ -332,7 +332,7 @@ Como cada serviço é dono do próprio banco, essa escolha é por serviço, e n�
 
 ## Estrutura do projeto
 
-Cada serviço é organizado por domínio, no mesmo padrão do `paytrack-card-service`. Exemplo do pagamento:
+Cada serviço é organizado por domínio, no mesmo padrão do `card-service`. Exemplo do pagamento:
 
 ```
 pagamento-service/src/main/java/com/livraria/pagamento/
