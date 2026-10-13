@@ -180,6 +180,98 @@ O pedido-service guarda o evento da saga: o pedido, os itens, o status e o hist�
 
 Nos outros três serviços usei PostgreSQL porque o dado tem regra: código de livro único, estoque ligado às movimentações por chave estrangeira, pagamento com status. São estruturas fixas, e o banco relacional garante a integridade sozinho.
 
+## Modelo de dados
+
+Cada serviço tem o próprio banco, então não existe chave estrangeira entre serviços. O que liga os dados de um serviço aos de outro é o `pedido_id` e o `transacao_id` que chegam no evento, e o código do livro, que é o mesmo no catálogo e no estoque.
+
+### pedido-db (MongoDB)
+
+```mermaid
+erDiagram
+    PEDIDO ||--o{ EVENTO : "acompanhado por"
+    PEDIDO {
+        objectId _id PK
+        array itens "livro e quantidade"
+        string transacaoId
+        decimal128 valorTotal "o total final fica no evento"
+        int quantidadeTotal
+        date criadoEm
+    }
+    EVENTO {
+        objectId _id PK
+        int versao "versão do contrato"
+        string pedidoId "referência ao pedido"
+        string transacaoId
+        object pedido "cópia do pedido com os totais"
+        string origem "último serviço que respondeu"
+        string status "SUCESSO, ROLLBACK_PENDENTE ou FALHA"
+        array historico "uma entrada por etapa"
+        date criadoEm
+    }
+```
+
+### validacao-livro-db (PostgreSQL)
+
+```mermaid
+erDiagram
+    LIVRO {
+        bigint id PK
+        varchar codigo UK "identificador do livro entre os serviços"
+        varchar titulo
+    }
+    VALIDACAO {
+        bigint id PK
+        varchar pedido_id "vem do evento"
+        varchar transacao_id "vem do evento"
+        boolean sucesso
+        timestamp criado_em
+        timestamp atualizado_em
+    }
+```
+
+### pagamento-db (PostgreSQL)
+
+```mermaid
+erDiagram
+    PAGAMENTO {
+        bigint id PK
+        varchar pedido_id "vem do evento"
+        varchar transacao_id "vem do evento"
+        integer quantidade_total
+        numeric valor_total "NUMERIC(10,2)"
+        varchar status "PENDENTE, APROVADO ou ESTORNADO"
+        timestamp criado_em
+        timestamp atualizado_em
+    }
+```
+
+### estoque-db (PostgreSQL)
+
+```mermaid
+erDiagram
+    ESTOQUE ||--o{ MOVIMENTACAO_ESTOQUE : "registra baixa"
+    ESTOQUE {
+        bigint id PK
+        varchar codigo_livro UK "mesmo código do catálogo"
+        integer disponivel
+    }
+    MOVIMENTACAO_ESTOQUE {
+        bigint id PK
+        bigint estoque_id FK
+        varchar pedido_id "vem do evento"
+        varchar transacao_id "vem do evento"
+        integer quantidade_pedida
+        integer quantidade_anterior "usada no rollback"
+        integer quantidade_nova
+        timestamp criado_em
+    }
+```
+
+```
+Estoque (1) ──── (N) MovimentacaoEstoque
+Pedido  (1) ──── (N) Evento                 referência pelo pedidoId, sem chave estrangeira
+```
+
 ## Decisões que tomei
 
 Dinheiro em `BigDecimal`. Com `double`, um pedido de 3 livros de R$ 29,90 dava `89.69999999999999`. No Postgres a coluna é `NUMERIC(10,2)` e no Mongo o valor é gravado como `Decimal128`.
