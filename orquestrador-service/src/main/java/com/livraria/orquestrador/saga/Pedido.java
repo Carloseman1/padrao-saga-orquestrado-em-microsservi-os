@@ -1,5 +1,6 @@
 package com.livraria.orquestrador.saga;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -11,7 +12,7 @@ public class Pedido {
     private String id;
     private List<ItemPedido> itens;
     private String transacaoId;
-    private double valorTotal;
+    private BigDecimal valorTotal;
     private int quantidadeTotal;
     private LocalDateTime criadoEm;
 }

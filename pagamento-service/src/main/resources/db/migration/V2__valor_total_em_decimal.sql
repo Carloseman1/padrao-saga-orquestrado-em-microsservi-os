@@ -1,0 +1,1 @@
+ALTER TABLE pagamento ALTER COLUMN valor_total TYPE NUMERIC(10, 2);

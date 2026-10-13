@@ -1,4 +1,6 @@
 package com.livraria.estoque.saga;
 
-public record Livro(String codigo, double valorUnitario) {
+import java.math.BigDecimal;
+
+public record Livro(String codigo, BigDecimal valorUnitario) {
 }

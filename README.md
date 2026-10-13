@@ -380,6 +380,7 @@ validacao-livro-service
 
 pagamento-service
   V1  pagamento
+  V2  valor_total em NUMERIC(10,2)    →  dinheiro em BigDecimal, sem erro de arredondamento do double
 
 estoque-service
   V1  estoque, movimentacao_estoque  →  movimentação com FK para o estoque

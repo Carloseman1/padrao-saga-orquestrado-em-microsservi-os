@@ -1,10 +1,13 @@
 package com.livraria.pedido.pedido;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 import com.livraria.pedido.pedido.exceptions.PedidoSemItensException;
 
@@ -20,7 +23,8 @@ public class Pedido {
     private String id;
     private List<ItemPedido> itens;
     private String transacaoId;
-    private double valorTotal;
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal valorTotal;
     private int quantidadeTotal;
     private LocalDateTime criadoEm;
 
@@ -33,6 +37,7 @@ public class Pedido {
         }
         this.itens = itens;
         this.transacaoId = transacaoId;
+        this.valorTotal = BigDecimal.ZERO;
         this.criadoEm = criadoEm;
     }
 }

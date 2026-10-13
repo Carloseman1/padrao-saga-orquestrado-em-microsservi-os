@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -97,7 +98,7 @@ class EventoServiceTest {
 
     private Evento evento(String pedidoId) {
         Pedido pedido = new Pedido(
-                List.of(new ItemPedido(new Livro("IRACEMA", 25.0), 1)), "transacao-1", LocalDateTime.now(OUTUBRO_DE_2026));
+                List.of(new ItemPedido(new Livro("IRACEMA", new BigDecimal("25.00")), 1)), "transacao-1", LocalDateTime.now(OUTUBRO_DE_2026));
         pedido.setId(pedidoId);
         return new Evento(pedido, LocalDateTime.now(OUTUBRO_DE_2026));
     }

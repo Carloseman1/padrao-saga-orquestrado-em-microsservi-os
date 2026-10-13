@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -31,7 +32,7 @@ class PedidoServiceTest {
 
     private static final Clock OUTUBRO_DE_2026 =
             Clock.fixed(Instant.parse("2026-10-12T10:00:00Z"), ZoneId.of("UTC"));
-    private static final ItemPedido DOM_CASMURRO = new ItemPedido(new Livro("DOM_CASMURRO", 39.9), 2);
+    private static final ItemPedido DOM_CASMURRO = new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("39.90")), 2);
 
     @Mock
     private PedidoRepository pedidoRepository;

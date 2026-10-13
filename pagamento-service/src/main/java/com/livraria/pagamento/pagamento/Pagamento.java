@@ -1,5 +1,6 @@
 package com.livraria.pagamento.pagamento;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import com.livraria.pagamento.pagamento.exceptions.ValorMinimoNaoAtingidoException;
@@ -21,7 +22,7 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(of = "id")
 public class Pagamento {
 
-    private static final double VALOR_MINIMO = 0.1;
+    private static final BigDecimal VALOR_MINIMO = new BigDecimal("0.10");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -36,8 +37,8 @@ public class Pagamento {
     @Column(name = "quantidade_total", nullable = false)
     private int quantidadeTotal;
 
-    @Column(name = "valor_total", nullable = false)
-    private double valorTotal;
+    @Column(name = "valor_total", nullable = false, precision = 10, scale = 2)
+    private BigDecimal valorTotal;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -52,7 +53,7 @@ public class Pagamento {
     protected Pagamento() {
     }
 
-    public Pagamento(String pedidoId, String transacaoId, int quantidadeTotal, double valorTotal,
+    public Pagamento(String pedidoId, String transacaoId, int quantidadeTotal, BigDecimal valorTotal,
                      LocalDateTime agora) {
         this.pedidoId = pedidoId;
         this.transacaoId = transacaoId;
@@ -64,7 +65,7 @@ public class Pagamento {
     }
 
     public void aprovar(LocalDateTime agora) {
-        if (valorTotal < VALOR_MINIMO) {
+        if (valorTotal.compareTo(VALOR_MINIMO) < 0) {
             throw new ValorMinimoNaoAtingidoException();
         }
         this.status = StatusPagamento.APROVADO;

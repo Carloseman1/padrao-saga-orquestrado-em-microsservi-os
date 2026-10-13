@@ -6,6 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -140,7 +141,7 @@ class ValidacaoServiceTest {
     }
 
     private ItemPedido item(String codigo) {
-        return new ItemPedido(new Livro(codigo, 30.0), 1);
+        return new ItemPedido(new Livro(codigo, new BigDecimal("30.00")), 1);
     }
 
     private Evento evento(ItemPedido... itens) {

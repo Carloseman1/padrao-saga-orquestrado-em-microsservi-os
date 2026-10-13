@@ -6,6 +6,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -51,22 +52,32 @@ class PagamentoServiceTest {
     @Test
     void realiza_pagamento_e_preenche_os_totais_do_pedido() {
         devolverOPagamentoSalvo();
-        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", 30.0), 2),
-                new ItemPedido(new Livro("IRACEMA", 15.5), 1));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 2),
+                new ItemPedido(new Livro("IRACEMA", new BigDecimal("15.50")), 1));
 
         pagamentoService.realizar(evento);
 
         assertThat(evento.getStatus()).isEqualTo(StatusSaga.SUCESSO);
         assertThat(evento.getOrigem()).isEqualTo("PAGAMENTO_SERVICE");
-        assertThat(evento.getPedido().getValorTotal()).isEqualTo(75.5);
+        assertThat(evento.getPedido().getValorTotal()).isEqualByComparingTo("75.50");
         assertThat(evento.getPedido().getQuantidadeTotal()).isEqualTo(3);
         verify(orquestradorProducer).enviar(evento);
     }
 
     @Test
+    void soma_os_centavos_sem_erro_de_arredondamento() {
+        devolverOPagamentoSalvo();
+        Evento evento = evento(new ItemPedido(new Livro("O_CORTICO", new BigDecimal("29.90")), 3));
+
+        pagamentoService.realizar(evento);
+
+        assertThat(evento.getPedido().getValorTotal()).isEqualTo(new BigDecimal("89.70"));
+    }
+
+    @Test
     void pede_rollback_quando_valor_esta_abaixo_do_minimo() {
         devolverOPagamentoSalvo();
-        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", 0.05), 1));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("0.05")), 1));
 
         pagamentoService.realizar(evento);
 
@@ -79,7 +90,7 @@ class PagamentoServiceTest {
     @Test
     void pede_rollback_quando_transacao_ja_foi_paga() {
         when(pagamentoRepository.existsByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(true);
-        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", 30.0), 1));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 1));
 
         pagamentoService.realizar(evento);
 
@@ -89,22 +100,22 @@ class PagamentoServiceTest {
 
     @Test
     void estorna_pagamento_existente() {
-        Pagamento pagamento = new Pagamento(PEDIDO, TRANSACAO, 2, 60.0, LocalDateTime.now(OUTUBRO_DE_2026));
+        Pagamento pagamento = new Pagamento(PEDIDO, TRANSACAO, 2, new BigDecimal("60.00"), LocalDateTime.now(OUTUBRO_DE_2026));
         when(pagamentoRepository.findByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(Optional.of(pagamento));
-        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", 30.0), 2));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 2));
 
         pagamentoService.estornar(evento);
 
         assertThat(pagamento.getStatus()).isEqualTo(StatusPagamento.ESTORNADO);
         assertThat(evento.getStatus()).isEqualTo(StatusSaga.FALHA);
-        assertThat(evento.getPedido().getValorTotal()).isEqualTo(60.0);
+        assertThat(evento.getPedido().getValorTotal()).isEqualByComparingTo("60.00");
         assertThat(ultimaMensagem(evento)).isEqualTo("Estorno do pagamento realizado.");
     }
 
     @Test
     void registra_falha_quando_nao_ha_pagamento_para_estornar() {
         when(pagamentoRepository.findByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(Optional.empty());
-        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", 30.0), 1));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 1));
 
         pagamentoService.estornar(evento);
 
