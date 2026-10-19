@@ -45,6 +45,9 @@ public class MovimentacaoEstoque {
     @Column(name = "criado_em", nullable = false, updatable = false)
     private LocalDateTime criadoEm;
 
+    @Column(name = "estornado_em")
+    private LocalDateTime estornadoEm;
+
     protected MovimentacaoEstoque() {
     }
 
@@ -57,5 +60,13 @@ public class MovimentacaoEstoque {
         this.quantidadeAnterior = estoque.getDisponivel();
         this.quantidadeNova = estoque.getDisponivel() - quantidadePedida;
         this.criadoEm = criadoEm;
+    }
+
+    public boolean isEstornada(){
+        return estornadoEm != null;
+    }
+
+    public void estornar(LocalDateTime agora){
+        this.estornadoEm = agora;
     }
 }
