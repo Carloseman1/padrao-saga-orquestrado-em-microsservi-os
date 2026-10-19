@@ -53,12 +53,4 @@ class EstoqueTest {
         assertThat(estoque.getDisponivel()).isEqualTo(2);
     }
 
-    @Test
-    void restaura_a_quantidade_anterior() {
-        Estoque estoque = new Estoque("DOM_CASMURRO", 1);
-
-        estoque.restaurar(4);
-
-        assertThat(estoque.getDisponivel()).isEqualTo(4);
-    }
 }

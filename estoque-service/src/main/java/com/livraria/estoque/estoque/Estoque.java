@@ -44,10 +44,6 @@ public class Estoque {
         this.disponivel -= quantidade;
     }
 
-    public void restaurar(int quantidadeAnterior) {
-        this.disponivel = quantidadeAnterior;
-    }
-
     public void repor(int quantidade) {
         if (quantidade <= 0) {
             throw new QuantidadeInvalidaException();

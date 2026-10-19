@@ -90,7 +90,9 @@ public class EstoqueService {
         try {
             movimentacaoRepository
                     .findByPedidoIdAndTransacaoId(evento.getPedido().getId(), evento.getTransacaoId())
-                    .forEach(this::restaurar);
+                    .stream()
+                    .filter(movimentacao -> !movimentacao.isEstornada())
+                    .forEach(this::devolver);
             evento.registrar(ORIGEM, StatusSaga.FALHA, "Rollback executado no estoque.", agora());
         } catch (RuntimeException ex) {
             log.error("Erro ao desfazer a baixa no estoque", ex);
@@ -112,11 +114,15 @@ public class EstoqueService {
         movimentacaoRepository.save(movimentacao);
     }
 
-    private void restaurar(MovimentacaoEstoque movimentacao) {
-        Estoque estoque = movimentacao.getEstoque();
-        estoque.restaurar(movimentacao.getQuantidadeAnterior());
-        estoqueRepository.save(estoque);
-        log.info("Estoque do livro {} restaurado para {}", estoque.getCodigoLivro(), estoque.getDisponivel());
+    private void devolver(MovimentacaoEstoque movimentacao) {
+      Estoque estoque = movimentacao.getEstoque();
+      estoque.repor(movimentacao.getQuantidadePedida());
+      movimentacao.estornar(agora());
+      estoqueRepository.save(estoque);
+      movimentacaoRepository.save(movimentacao);
+      log.info("Devolvidas {} unidades do livro {}, estoque agora com {}",
+              movimentacao.getQuantidadePedida(), estoque.getCodigoLivro(),
+              estoque.getDisponivel());
     }
 
     private String motivo(RuntimeException ex) {

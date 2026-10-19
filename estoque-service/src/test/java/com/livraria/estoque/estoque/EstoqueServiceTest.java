@@ -145,21 +145,57 @@ class EstoqueServiceTest {
     }
 
     @Test
-    void rollback_devolve_a_quantidade_anterior() {
-        Estoque estoque = new Estoque("DOM_CASMURRO", 4);
-        MovimentacaoEstoque movimentacao =
-                new MovimentacaoEstoque(estoque, PEDIDO, TRANSACAO, 3, LocalDateTime.now(OUTUBRO_DE_2026));
-        estoque.baixar(3);
+    void rollback_devolve_o_pedido_sem_apagar_venda_feita_no_meio() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 2);
+        MovimentacaoEstoque movimentacao = baixaDoPedido(estoque, 1);
+        estoque.baixar(1);
         when(movimentacaoRepository.findByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO))
                 .thenReturn(List.of(movimentacao));
-        Evento evento = evento(item("DOM_CASMURRO", 3));
+        Evento evento = evento(item("DOM_CASMURRO", 1));
 
         estoqueService.desfazer(evento);
 
-        assertThat(estoque.getDisponivel()).isEqualTo(4);
+        assertThat(estoque.getDisponivel()).isEqualTo(1);
+        assertThat(movimentacao.isEstornada()).isTrue();
         assertThat(evento.getStatus()).isEqualTo(StatusSaga.FALHA);
         assertThat(ultimaMensagem(evento)).isEqualTo("Rollback executado no estoque.");
+        verify(movimentacaoRepository).save(movimentacao);
         verify(orquestradorProducer).enviar(evento);
+    }
+
+    @Test
+    void rollback_devolve_cada_item_quando_o_mesmo_livro_aparece_duas_vezes() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 2);
+        MovimentacaoEstoque primeira = baixaDoPedido(estoque, 1);
+        MovimentacaoEstoque segunda = baixaDoPedido(estoque, 1);
+        when(movimentacaoRepository.findByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO))
+                .thenReturn(List.of(primeira, segunda));
+
+        estoqueService.desfazer(evento(item("DOM_CASMURRO", 1), item("DOM_CASMURRO", 1)));
+
+        assertThat(estoque.getDisponivel()).isEqualTo(2);
+    }
+
+    @Test
+    void rollback_repetido_nao_devolve_de_novo() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 2);
+        MovimentacaoEstoque movimentacao = baixaDoPedido(estoque, 1);
+        when(movimentacaoRepository.findByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO))
+                .thenReturn(List.of(movimentacao));
+        Evento evento = evento(item("DOM_CASMURRO", 1));
+
+        estoqueService.desfazer(evento);
+        estoqueService.desfazer(evento);
+
+        assertThat(estoque.getDisponivel()).isEqualTo(2);
+    }
+
+    private MovimentacaoEstoque baixaDoPedido(Estoque estoque, int quantidade){
+        MovimentacaoEstoque movimentacao =
+                new MovimentacaoEstoque(estoque,PEDIDO, TRANSACAO, quantidade,
+                        LocalDateTime.now(OUTUBRO_DE_2026));
+        estoque.baixar(quantidade);
+        return movimentacao;
     }
 
     private ItemPedido item(String codigo, int quantidade) {
@@ -181,4 +217,6 @@ class EstoqueServiceTest {
         List<Historico> historico = evento.getHistorico();
         return historico.get(historico.size() - 1).mensagem();
     }
+
+
 }
