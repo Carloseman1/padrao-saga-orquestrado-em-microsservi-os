@@ -1,6 +1,7 @@
 package com.livraria.estoque.estoque;
 
 import com.livraria.estoque.estoque.exceptions.EstoqueInsuficienteException;
+import com.livraria.estoque.estoque.exceptions.QuantidadeInvalidaException;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -27,6 +28,7 @@ public class Estoque {
     @Column(name = "disponivel", nullable = false)
     private int disponivel;
 
+
     protected Estoque() {
     }
 
@@ -44,5 +46,12 @@ public class Estoque {
 
     public void restaurar(int quantidadeAnterior) {
         this.disponivel = quantidadeAnterior;
+    }
+
+    public void repor(int quantidade) {
+        if (quantidade <= 0) {
+            throw new QuantidadeInvalidaException();
+        }
+        this.disponivel += quantidade;
     }
 }

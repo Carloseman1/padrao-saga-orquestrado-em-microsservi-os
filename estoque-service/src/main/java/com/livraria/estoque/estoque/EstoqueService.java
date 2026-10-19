@@ -2,17 +2,22 @@ package com.livraria.estoque.estoque;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import com.livraria.estoque.estoque.dto.EntradaEstoqueRequest;
+import com.livraria.estoque.estoque.dto.EstoqueDTO;
 import com.livraria.estoque.estoque.exceptions.EstoqueNaoEncontradoException;
 import com.livraria.estoque.estoque.exceptions.MovimentacaoDuplicadaException;
 import com.livraria.estoque.saga.Evento;
 import com.livraria.estoque.saga.ItemPedido;
 import com.livraria.estoque.saga.OrquestradorProducer;
 import com.livraria.estoque.saga.StatusSaga;
+import com.livraria.estoque.shared.exception.CampoObrigatorioException;
 import com.livraria.estoque.shared.exception.IErroPadrao;
 
 @Service
@@ -32,6 +37,35 @@ public class EstoqueService {
         this.movimentacaoRepository = movimentacaoRepository;
         this.orquestradorProducer = orquestradorProducer;
         this.clock = clock;
+    }
+
+    public void criarParaLivroNovo(LivroCadastrado livro) {
+        if (estoqueRepository.findByCodigoLivro(livro.codigo()).isPresent()) {
+            log.info("O livro {} já tem estoque, nada a criar", livro.codigo());
+            return;
+        }
+
+        estoqueRepository.save(new Estoque(livro.codigo(), livro.quantidadeInicial()));
+        log.info("Estoque criado para o livro {} com {} unidades", livro.codigo(), livro.quantidadeInicial());
+    }
+
+    public EstoqueDTO registrarEntrada(EntradaEstoqueRequest request) {
+        if (request.codigoLivro() == null || request.codigoLivro().isBlank()) {
+            throw new CampoObrigatorioException("código do livro");
+        }
+
+        String codigoLivro = request.codigoLivro().trim().toUpperCase();
+        Estoque estoque = estoqueRepository.findByCodigoLivro(codigoLivro)
+                .orElseGet(() -> new Estoque(codigoLivro, 0));
+
+        estoque.repor(request.quantidade());
+        return EstoqueDTO.de(estoqueRepository.save(estoque));
+    }
+
+    public List<EstoqueDTO> listar() {
+        return estoqueRepository.findAll(Sort.by("codigoLivro")).stream()
+                .map(EstoqueDTO::de)
+                .toList();
     }
 
     public void baixar(Evento evento) {

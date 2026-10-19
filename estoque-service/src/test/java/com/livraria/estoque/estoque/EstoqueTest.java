@@ -6,8 +6,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.junit.jupiter.api.Test;
 
 import com.livraria.estoque.estoque.exceptions.EstoqueInsuficienteException;
+import com.livraria.estoque.estoque.exceptions.QuantidadeInvalidaException;
 
 class EstoqueTest {
+
+    @Test
+    void repor_soma_ao_que_ja_tem() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 2);
+
+        estoque.repor(5);
+
+        assertThat(estoque.getDisponivel()).isEqualTo(7);
+    }
+
+    @Test
+    void recusa_reposicao_sem_quantidade() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 2);
+
+        assertThatThrownBy(() -> estoque.repor(0)).isInstanceOf(QuantidadeInvalidaException.class);
+        assertThat(estoque.getDisponivel()).isEqualTo(2);
+    }
 
     @Test
     void baixa_a_quantidade_pedida() {

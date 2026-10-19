@@ -21,6 +21,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.livraria.estoque.estoque.dto.EntradaEstoqueRequest;
+import com.livraria.estoque.estoque.dto.EstoqueDTO;
 import com.livraria.estoque.saga.Evento;
 import com.livraria.estoque.saga.Historico;
 import com.livraria.estoque.saga.ItemPedido;
@@ -52,6 +54,39 @@ class EstoqueServiceTest {
     void criarService() {
         estoqueService = new EstoqueService(
                 estoqueRepository, movimentacaoRepository, orquestradorProducer, OUTUBRO_DE_2026);
+    }
+
+    @Test
+    void livro_novo_do_catalogo_ganha_estoque_com_a_quantidade_inicial() {
+        when(estoqueRepository.findByCodigoLivro("O_ALIENISTA")).thenReturn(Optional.empty());
+
+        estoqueService.criarParaLivroNovo(new LivroCadastrado("O_ALIENISTA", "O Alienista", 10));
+
+        ArgumentCaptor<Estoque> capturado = ArgumentCaptor.forClass(Estoque.class);
+        verify(estoqueRepository).save(capturado.capture());
+        assertThat(capturado.getValue().getCodigoLivro()).isEqualTo("O_ALIENISTA");
+        assertThat(capturado.getValue().getDisponivel()).isEqualTo(10);
+    }
+
+    @Test
+    void livro_que_ja_tem_estoque_nao_e_criado_de_novo() {
+        when(estoqueRepository.findByCodigoLivro("DOM_CASMURRO"))
+                .thenReturn(Optional.of(new Estoque("DOM_CASMURRO", 4)));
+
+        estoqueService.criarParaLivroNovo(new LivroCadastrado("DOM_CASMURRO", "Dom Casmurro", 10));
+
+        verify(estoqueRepository, never()).save(any());
+    }
+
+    @Test
+    void entrada_soma_ao_estoque_existente() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 2);
+        when(estoqueRepository.findByCodigoLivro("DOM_CASMURRO")).thenReturn(Optional.of(estoque));
+        when(estoqueRepository.save(estoque)).thenReturn(estoque);
+
+        EstoqueDTO atualizado = estoqueService.registrarEntrada(new EntradaEstoqueRequest("dom_casmurro", 3));
+
+        assertThat(atualizado.disponivel()).isEqualTo(5);
     }
 
     @Test

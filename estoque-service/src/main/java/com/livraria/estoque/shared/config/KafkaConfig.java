@@ -27,11 +27,13 @@ public class KafkaConfig {
     @Bean
     public KafkaAdmin.NewTopics topicos(@Value("${app.kafka.topico.orquestrador}") String orquestrador,
                                         @Value("${app.kafka.topico.estoque-sucesso}") String sucesso,
-                                        @Value("${app.kafka.topico.estoque-falha}") String falha) {
+                                        @Value("${app.kafka.topico.estoque-falha}") String falha,
+                                        @Value("${app.kafka.topico.livro-cadastrado}") String livroCadastrado) {
         return new KafkaAdmin.NewTopics(
                 topico(orquestrador),
                 topico(sucesso), topico(sucesso + SUFIXO_DLT),
-                topico(falha), topico(falha + SUFIXO_DLT));
+                topico(falha), topico(falha + SUFIXO_DLT),
+                topico(livroCadastrado), topico(livroCadastrado + SUFIXO_DLT));
     }
 
     @Bean
