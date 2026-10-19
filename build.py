@@ -20,6 +20,7 @@ PORTAS = {
     3000: "pedido-service",
     8080: "orquestrador-service",
     8081: "redpanda-console",
+    8082: "mongo-express",
     8090: "validacao-livro-service",
     8091: "pagamento-service",
     8092: "estoque-service",
@@ -142,6 +143,8 @@ def subir(com_testes):
     print("\nTudo no ar.")
     print("  Swagger do pedido-service: http://localhost:3000/swagger-ui.html")
     print("  Redpanda Console:          http://localhost:8081")
+    print("  MongoDB (mongo-express):   http://localhost:8082")
+    print("  Para ver a saga rodando:   py demo.py")
     return 0
 
 

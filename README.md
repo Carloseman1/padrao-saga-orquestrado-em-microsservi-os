@@ -36,7 +36,30 @@ Depois é rodar a classe `*Application` de cada serviço, ou `./mvnw spring-boot
 
 Se os containers dos serviços estiverem rodando, não suba os mesmos serviços pelo `mvnw`, as portas já vão estar ocupadas.
 
-### Testando o fluxo
+### Vendo a saga funcionar
+
+Com tudo no ar, o `demo.py` faz pedidos de exemplo e mostra cada etapa por onde o pedido passou, com o tempo de cada uma e o link do documento no MongoDB:
+
+```bash
+py demo.py
+```
+
+Ele roda cinco cenários: compra aprovada, falha no estoque, falha no pagamento, livro fora do catálogo e uma mensagem com JSON quebrado indo para a DLT. Dá pra rodar só um, por exemplo `py demo.py estoque`. Cada compra aprovada baixa o estoque de verdade, então depois de muitas execuções o livro acaba. Para voltar ao estoque inicial, é só rodar `py build.py` de novo, porque os bancos sobem do zero.
+
+```
+=== Falha no estoque ===
+  3 x O Cortiço, que só tem 2. Validação e pagamento passam, o estoque recusa e tudo é desfeito.
+    +0.00s  Orquestrador         ok        Saga iniciada.
+    +0.04s  Validação de livros  ok        Livros validados com sucesso.
+    +0.09s  Pagamento            ok        Pagamento realizado com sucesso.
+    +0.17s  Estoque              falhou    Falha ao atualizar o estoque: Estoque insuficiente para o livro.
+    +0.24s  Estoque              desfeito  Rollback executado no estoque.
+    +0.32s  Pagamento            desfeito  Estorno do pagamento realizado.
+    +0.60s  Validação de livros  desfeito  Rollback executado na validação dos livros.
+    +0.64s  Orquestrador         desfeito  Saga finalizada com erros.
+```
+
+### Testando o fluxo na mão
 
 O mais fácil é pelo Swagger: http://localhost:3000/swagger-ui.html
 
@@ -70,6 +93,7 @@ As mensagens trocadas no Kafka aparecem no Redpanda Console, em http://localhost
 | pagamento-service | 8091 |
 | estoque-service | 8092 |
 | Redpanda Console | 8081 |
+| mongo-express (tela do MongoDB) | 8082 |
 | Kafka | 9092 |
 | MongoDB | 27017 |
 | PostgreSQL (validação, pagamento, estoque) | 5432, 5433, 5434 |
