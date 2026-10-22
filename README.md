@@ -139,11 +139,30 @@ flowchart LR
     est --- pg3
 ```
 
-Só o pedido-service tem API. Ele grava o pedido no MongoDB e publica o evento em `inicio-saga`. Daí pra frente tudo acontece pelo Kafka, e o resultado final volta pra ele no tópico `notificar-fim`.
+Na saga, quem recebe o pedido é o pedido-service. Ele grava o pedido no MongoDB e publica o evento em `inicio-saga`. Daí pra frente tudo acontece pelo Kafka, e o resultado final volta pra ele no tópico `notificar-fim`.
 
 O orquestrador é o único que conhece a ordem das etapas. Os outros serviços só sabem fazer e desfazer a própria parte: cada um escuta um tópico para executar (`*-sucesso`) e outro para desfazer (`*-falha`), e sempre responde no tópico `orquestrador`. Se eu quiser mudar a ordem das etapas, mexo só no orquestrador.
 
 Cada serviço tem o próprio banco e nenhum acessa o banco do outro. Tudo o que um serviço precisa saber do pedido vem dentro do evento.
+
+## Síncrono e assíncrono
+
+A regra que segui: **o usuário fala com os serviços de forma síncrona (HTTP), e os serviços falam entre si de forma assíncrona (Kafka)**. A única chamada síncrona entre sistemas é a consulta de CEP no ViaCEP.
+
+| Ação do usuário | Serviço | Como | O que volta na hora |
+|---|---|---|---|
+| Criar pedido | pedido-service | HTTP para registrar, Kafka para processar | `201` com o `id` do pedido, sem o resultado |
+| Consultar o pedido | pedido-service | HTTP | Status e histórico de cada etapa |
+| Cadastrar livro no catálogo | validacao-livro-service | HTTP, e o estoque é avisado pelo Kafka (`livro-cadastrado`) | O livro cadastrado |
+| Registrar entrada de estoque | estoque-service | HTTP | O estoque atualizado |
+| Consultar CEP, cadastrar-se, login e logout | usuario-service *(em construção)* | HTTP, e o CEP é consultado no ViaCEP também por HTTP | Endereço, usuário ou cookie de sessão |
+| Cadastrar e listar cartões | pagamento-service *(planejado)* | HTTP | O cartão mascarado |
+
+**Por que a saga é assíncrona.** Se o pedido-service chamasse validação, pagamento e estoque por HTTP, o usuário esperaria os três e qualquer um fora do ar derrubaria a compra. Pelo Kafka, se o estoque cair, a mensagem espera na fila e é processada quando ele voltar. O custo é que o resultado não volta na resposta do `POST`: o cliente consulta depois no `GET /api/eventos`.
+
+**Login sem chamada a cada requisição** *(em construção)*. O usuario-service gera o JWT e o grava num cookie `HttpOnly` com `SameSite=Strict`. O navegador envia o cookie sozinho, e cada serviço confere a assinatura do token com o mesmo segredo, sem perguntar nada ao usuario-service. Se ele cair, quem já está logado continua comprando, só o login para. A contrapartida é que o logout só invalida o token no próprio usuario-service; nos outros ele vale até expirar, que hoje é 1 hora.
+
+**Cartão em dois momentos** *(planejado)*. O cadastro é síncrono: o pagamento-service valida, criptografa e responde na hora. O uso é assíncrono: o pedido leva só o `cartaoId`, o `usuarioId` vem do token, e é na etapa de pagamento da saga que o pagamento-service confere se o cartão existe, é daquele usuário e não está vencido. Se não estiver, responde `ROLLBACK_PENDENTE` e a saga se desfaz como em qualquer outra falha. Não validei o cartão no momento do pedido porque isso obrigaria o pedido-service a chamar o pagamento por HTTP, e com o pagamento fora do ar ninguém conseguiria nem registrar o pedido. O número do cartão nunca passa pelo Kafka.
 
 ## Como a saga funciona
 
