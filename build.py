@@ -28,6 +28,7 @@ PORTAS = {
     5432: "validacao-livro-db",
     5433: "pagamento-db",
     5434: "estoque-db",
+    5435: "usuario-db",
     27017: "pedido-db",
 }
 
