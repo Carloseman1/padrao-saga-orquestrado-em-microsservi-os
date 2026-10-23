@@ -331,6 +331,10 @@ As regras ficam nas entidades: `Pagamento.aprovar()` recusa valor abaixo do mín
 
 As datas vêm de um `Clock` injetado, o que deixa os testes previsíveis.
 
+No usuario-service, as respostas não revelam se um e-mail tem conta, com uma exceção consciente. O login responde "E-mail ou senha incorretos" tanto para e-mail inexistente quanto para senha errada, o bloqueio depois de 5 tentativas conta também os e-mails que não existem, e o "esqueci a senha" sempre responde `204`. O cadastro é a exceção: ele responde `EMAIL_CADASTRADO` quando o e-mail já existe. Cheguei nisso revisando as mensagens de erro: essa resposta permite que um robô teste uma lista de e-mails e descubra quais têm conta (enumeração de usuários). Mantive a mensagem porque esconder a informação no cadastro só funciona confirmando a conta por e-mail, e o projeto ainda não envia e-mails; sem isso, quem já tem conta tentaria se cadastrar de novo e não entenderia o que aconteceu. O próximo passo é limitar as tentativas de cadastro por IP, no mesmo formato do bloqueio do login, para que o robô não consiga testar milhares de e-mails.
+
+Enquanto digitava o `ControleDeTentativas`, percebi um caso que a regra de bloqueio do login não cobre. Depois de 5 senhas erradas o e-mail fica bloqueado por 60 segundos, mas quando o bloqueio vence a contagem recomeça do zero. Um robô paciente consegue 5 tentativas por minuto, sem fim: 7.200 por dia para cada e-mail. Também não resolvi trocando por um bloqueio longo, de um dia por exemplo, porque aí qualquer pessoa conseguiria travar a conta de outra só errando a senha de propósito. A saída que escolhi é o bloqueio progressivo: a espera dobra a cada novo bloqueio (1, 2, 4, 8 minutos...) até um teto de 24 horas, e um login certo zera tudo. Quem erra a senha algumas vezes quase não percebe, e o robô, ao chegar no teto, fica com 5 tentativas por dia em vez de 7.200. Para isso o `ControleDeTentativas` passou a guardar também quantas vezes o e-mail já foi bloqueado. Ainda falta o limite por IP, que fecha o ataque de testar a mesma senha em muitos e-mails diferentes.
+
 ## Estrutura
 
 Cada serviço é organizado por domínio, no mesmo padrão do `card-service`. Exemplo do pagamento:
@@ -387,6 +391,8 @@ As conexões vêm de variáveis de ambiente, com valores padrão para rodar loca
 - Ainda não tem teste de integração com Kafka e bancos reais (Testcontainers).
 - As mensagens que vão para a DLT ficam guardadas, mas ainda não tem como reenviar depois de corrigir o problema.
 - Observabilidade (logs centralizados e rastreio da saga entre os serviços) fica para uma próxima versão, provavelmente com Elastic.
+- O cadastro de usuário ainda não limita tentativas por IP, então um robô consegue testar quais e-mails têm conta. A correção completa é confirmar o cadastro por e-mail, que depende de o projeto passar a enviar e-mails.
+- O bloqueio do login é por e-mail, então um robô ainda consegue testar a mesma senha em muitos e-mails diferentes. Falta o limite por IP. A contagem também fica na memória do serviço, então some num reinício e não é compartilhada entre instâncias; com mais de uma instância, ela teria que ir para o Redis.
 
 ## Autor
 
