@@ -47,7 +47,7 @@ public class RecuperacaoSenha {
         this.expiraEm = expiraEm;
     }
 
-    public boolean estaValido(LocalDateTime agora){
+    public boolean estaValida(LocalDateTime agora){
         return usadoEm == null && agora.isBefore(expiraEm);
     }
 

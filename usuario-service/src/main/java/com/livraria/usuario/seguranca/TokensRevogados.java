@@ -1,13 +1,13 @@
 package com.livraria.usuario.seguranca;
 
-import io.jsonwebtoken.Jwt;
-
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.stereotype.Component;
 
+@Component
 public class TokensRevogados {
 
     private final Map<String, Instant> expiracaoPorToken = new ConcurrentHashMap<>();

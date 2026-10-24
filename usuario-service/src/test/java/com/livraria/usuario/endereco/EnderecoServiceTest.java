@@ -13,7 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.livraria.usuario.endereco.exceptions.CepInvalidoException;
 import com.livraria.usuario.endereco.exceptions.CepNaoEncontradoException;
-import com.livraria.usuario.integracao.viacep.ViaCepClientTest;
+import com.livraria.usuario.integracao.viacep.ViaCepClient;
 import com.livraria.usuario.integracao.viacep.ViaCepResponse;
 import com.livraria.usuario.integracao.viacep.exceptions.ViaCepRespostaInesperadaException;
 
@@ -21,7 +21,7 @@ import com.livraria.usuario.integracao.viacep.exceptions.ViaCepRespostaInesperad
 class EnderecoServiceTest {
 
     @Mock
-    private ViaCepClientTest viaCepClient;
+    private ViaCepClient viaCepClient;
 
     private EnderecoService enderecoService;
 

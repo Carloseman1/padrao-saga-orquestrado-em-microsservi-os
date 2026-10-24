@@ -1,10 +1,13 @@
 package com.livraria.usuario.endereco;
 
+import org.springframework.stereotype.Service;
+
 import com.livraria.usuario.endereco.exceptions.CepNaoEncontradoException;
 import com.livraria.usuario.integracao.viacep.ViaCepClient;
 import com.livraria.usuario.integracao.viacep.ViaCepResponse;
 import com.livraria.usuario.integracao.viacep.exceptions.ViaCepRespostaInesperadaException;
 
+@Service
 public class EnderecoService {
 
     private final ViaCepClient viaCepClient;
