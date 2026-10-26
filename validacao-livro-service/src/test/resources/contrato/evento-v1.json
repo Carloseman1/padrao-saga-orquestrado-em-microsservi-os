@@ -11,6 +11,8 @@
         "quantidade": 2
       }
     ],
+    "usuarioId": 7,
+    "cartaoId": 1,
     "transacaoId": "transacao-1",
     "valorTotal": 79.80,
     "quantidadeTotal": 2,
