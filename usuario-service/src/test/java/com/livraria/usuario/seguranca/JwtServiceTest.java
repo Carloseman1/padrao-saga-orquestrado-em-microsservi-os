@@ -15,7 +15,7 @@ class JwtServiceTest {
     void gera_token_valido_com_o_email_no_assunto() {
         JwtService jwtService = new JwtService(SEGREDO, UMA_HORA);
 
-        String token = jwtService.gerarToken(EMAIL, 1L);
+        String token = jwtService.gerarToken(EMAIL, 1L, "CLIENTE");
 
         assertThat(jwtService.tokenValido(token)).isTrue();
         assertThat(jwtService.extrairEmail(token)).isEqualTo(EMAIL);
@@ -25,23 +25,32 @@ class JwtServiceTest {
     void o_token_carrega_o_id_do_usuario() {
         JwtService jwtService = new JwtService(SEGREDO, UMA_HORA);
 
-        String token = jwtService.gerarToken(EMAIL, 7L);
+        String token = jwtService.gerarToken(EMAIL, 7L, "CLIENTE");
 
         assertThat(jwtService.extrairUsuarioId(token)).isEqualTo(7L);
+    }
+
+    @Test
+    void o_token_carrega_o_perfil_do_usuario() {
+        JwtService jwtService = new JwtService(SEGREDO, UMA_HORA);
+
+        String token = jwtService.gerarToken(EMAIL, 7L, "ADMIN");
+
+        assertThat(jwtService.extrairPerfil(token)).isEqualTo("ADMIN");
     }
 
     @Test
     void token_expirado_nao_vale() {
         JwtService jaExpirado = new JwtService(SEGREDO, -1000L);
 
-        String token = jaExpirado.gerarToken(EMAIL, 1L);
+        String token = jaExpirado.gerarToken(EMAIL, 1L, "CLIENTE");
 
         assertThat(jaExpirado.tokenValido(token)).isFalse();
     }
 
     @Test
     void token_assinado_com_outro_segredo_nao_vale() {
-        String token = new JwtService(SEGREDO, UMA_HORA).gerarToken(EMAIL, 1L);
+        String token = new JwtService(SEGREDO, UMA_HORA).gerarToken(EMAIL, 1L, "CLIENTE");
 
         JwtService outraInstalacao = new JwtService(OUTRO_SEGREDO, UMA_HORA);
 

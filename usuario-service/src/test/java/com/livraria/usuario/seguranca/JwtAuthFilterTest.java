@@ -51,7 +51,7 @@ class JwtAuthFilterTest {
     @Test
     void token_valido_no_cookie_libera_e_identifica_o_usuario() throws Exception {
         MockHttpServletRequest requisicao = new MockHttpServletRequest("DELETE", "/api/sessao");
-        requisicao.setCookies(new Cookie(COOKIE, jwtService.gerarToken(EMAIL, 7L)));
+        requisicao.setCookies(new Cookie(COOKIE, jwtService.gerarToken(EMAIL, 7L, "CLIENTE")));
         MockFilterChain cadeia = new MockFilterChain();
 
         filtro.doFilter(requisicao, new MockHttpServletResponse(), cadeia);
@@ -59,12 +59,13 @@ class JwtAuthFilterTest {
         assertThat(cadeia.getRequest()).isNotNull();
         assertThat(requisicao.getAttribute(JwtAuthFilter.ATRIBUTO_ID)).isEqualTo(7L);
         assertThat(requisicao.getAttribute(JwtAuthFilter.ATRIBUTO_EMAIL)).isEqualTo(EMAIL);
+        assertThat(requisicao.getAttribute(JwtAuthFilter.ATRIBUTO_PERFIL)).isEqualTo("CLIENTE");
     }
 
     @Test
     void token_no_header_authorization_nao_e_mais_aceito() throws Exception {
         MockHttpServletRequest requisicao = new MockHttpServletRequest("DELETE", "/api/sessao");
-        requisicao.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + jwtService.gerarToken(EMAIL, 7L));
+        requisicao.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + jwtService.gerarToken(EMAIL, 7L, "CLIENTE"));
         MockHttpServletResponse resposta = new MockHttpServletResponse();
 
         filtro.doFilter(requisicao, resposta, new MockFilterChain());
@@ -74,7 +75,7 @@ class JwtAuthFilterTest {
 
     @Test
     void token_revogado_no_logout_e_recusado() throws Exception {
-        String token = jwtService.gerarToken(EMAIL, 7L);
+        String token = jwtService.gerarToken(EMAIL, 7L, "CLIENTE");
         tokensRevogados.revogar(token);
         MockHttpServletRequest requisicao = new MockHttpServletRequest("DELETE", "/api/sessao");
         requisicao.setCookies(new Cookie(COOKIE, token));

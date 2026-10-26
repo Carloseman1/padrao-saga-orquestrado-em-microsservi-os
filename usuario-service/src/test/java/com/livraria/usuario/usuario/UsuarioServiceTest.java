@@ -27,6 +27,7 @@ import com.livraria.usuario.seguranca.JwtService;
 import com.livraria.usuario.shared.exception.CampoObrigatorioException;
 import com.livraria.usuario.usuario.dto.LoginRequest;
 import com.livraria.usuario.usuario.dto.LoginResponseDTO;
+import com.livraria.usuario.usuario.dto.PerfilRequest;
 import com.livraria.usuario.usuario.dto.RecuperacaoRequest;
 import com.livraria.usuario.usuario.dto.RedefinicaoRequest;
 import com.livraria.usuario.usuario.dto.UsuarioDTO;
@@ -37,6 +38,7 @@ import com.livraria.usuario.usuario.exceptions.EmailInvalidoException;
 import com.livraria.usuario.usuario.exceptions.MuitasTentativasException;
 import com.livraria.usuario.usuario.exceptions.SenhaForaDoPadraoException;
 import com.livraria.usuario.usuario.exceptions.TokenRecuperacaoInvalidoException;
+import com.livraria.usuario.usuario.exceptions.UsuarioNaoEncontradoException;
 
 @ExtendWith(MockitoExtension.class)
 class UsuarioServiceTest {
@@ -142,7 +144,7 @@ class UsuarioServiceTest {
     void login_valido_devolve_o_token_e_o_nome_completo() {
         Usuario usuario = umUsuarioSalvo();
         when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(usuario));
-        when(jwtService.gerarToken(EMAIL, usuario.getId())).thenReturn("token-de-teste");
+        when(jwtService.gerarToken(EMAIL, usuario.getId(), "CLIENTE")).thenReturn("token-de-teste");
 
         LoginResponseDTO resposta = usuarioService.login(
                 new LoginRequest("USUARIO@TESTE.COM", SENHA));
@@ -265,6 +267,45 @@ class UsuarioServiceTest {
         assertThatThrownBy(() -> usuarioService.redefinirSenha(
                 new RedefinicaoRequest(TOKEN, "123456")))
                 .isInstanceOf(SenhaForaDoPadraoException.class);
+
+        verifyNoInteractions(usuarioRepository);
+    }
+
+    @Test
+    void cadastro_novo_nasce_como_cliente() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+        when(enderecoService.buscar("01001-000")).thenReturn(enderecoDoCep());
+        devolverOUsuarioSalvo();
+
+        UsuarioDTO cadastrado = usuarioService.cadastrar(requisicao());
+
+        assertThat(cadastrado.perfil()).isEqualTo(Perfil.CLIENTE);
+    }
+
+    @Test
+    void admin_promove_cliente_a_operador() {
+        Usuario usuario = umUsuarioSalvo();
+        when(usuarioRepository.findById(7L)).thenReturn(Optional.of(usuario));
+        devolverOUsuarioSalvo();
+
+        UsuarioDTO alterado = usuarioService.alterarPerfil(7L, new PerfilRequest(Perfil.OPERADOR));
+
+        assertThat(alterado.perfil()).isEqualTo(Perfil.OPERADOR);
+        assertThat(usuario.getPerfil()).isEqualTo(Perfil.OPERADOR);
+    }
+
+    @Test
+    void alterar_perfil_de_usuario_inexistente_reclama() {
+        when(usuarioRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> usuarioService.alterarPerfil(99L, new PerfilRequest(Perfil.ADMIN)))
+                .isInstanceOf(UsuarioNaoEncontradoException.class);
+    }
+
+    @Test
+    void alterar_perfil_sem_informar_o_perfil_reclama() {
+        assertThatThrownBy(() -> usuarioService.alterarPerfil(7L, new PerfilRequest(null)))
+                .isInstanceOf(CampoObrigatorioException.class);
 
         verifyNoInteractions(usuarioRepository);
     }

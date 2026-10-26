@@ -26,6 +26,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     public static final String ATRIBUTO_EMAIL = "usuarioEmail";
     public static final String ATRIBUTO_ID = "usuarioId";
     public static final String ATRIBUTO_TOKEN = "token";
+    public static final String ATRIBUTO_PERFIL = "usuarioPerfil";
 
     private static final Set<String> ROTAS_PUBLICAS = Set.of(
             "POST /api/usuarios",
@@ -70,6 +71,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         request.setAttribute(ATRIBUTO_TOKEN, token);
         request.setAttribute(ATRIBUTO_EMAIL, jwtService.extrairEmail(token));
         request.setAttribute(ATRIBUTO_ID, jwtService.extrairUsuarioId(token));
+        request.setAttribute(ATRIBUTO_PERFIL, jwtService.extrairPerfil(token));
         filterChain.doFilter(request, response);
     }
 

@@ -4,6 +4,8 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import com.livraria.usuario.usuario.dto.*;
+import com.livraria.usuario.usuario.exceptions.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,17 +18,6 @@ import com.livraria.usuario.endereco.Endereco;
 import com.livraria.usuario.endereco.EnderecoService;
 import com.livraria.usuario.seguranca.JwtService;
 import com.livraria.usuario.shared.exception.CampoObrigatorioException;
-import com.livraria.usuario.usuario.dto.LoginRequest;
-import com.livraria.usuario.usuario.dto.LoginResponseDTO;
-import com.livraria.usuario.usuario.dto.RecuperacaoRequest;
-import com.livraria.usuario.usuario.dto.RedefinicaoRequest;
-import com.livraria.usuario.usuario.dto.UsuarioDTO;
-import com.livraria.usuario.usuario.dto.UsuarioRequest;
-import com.livraria.usuario.usuario.exceptions.CredenciaisInvalidasException;
-import com.livraria.usuario.usuario.exceptions.EmailCadastradoException;
-import com.livraria.usuario.usuario.exceptions.SenhaForaDoPadraoException;
-import com.livraria.usuario.usuario.exceptions.SenhaVaziaException;
-import com.livraria.usuario.usuario.exceptions.TokenRecuperacaoInvalidoException;
 
 @Service
 public class UsuarioService {
@@ -109,7 +100,7 @@ public class UsuarioService {
                 usuario.getId(),
                 usuario.getNomeCompleto(),
                 usuario.getEmail(),
-                jwtService.gerarToken(usuario.getEmail(), usuario.getId()));
+                jwtService.gerarToken(usuario.getEmail(), usuario.getId(), usuario.getPerfil().name()));
     }
 
     @Transactional
@@ -189,5 +180,17 @@ public class UsuarioService {
         } catch (RuntimeException ex) {
             return null;
         }
+    }
+
+    public UsuarioDTO alterarPerfil(Long id, PerfilRequest request) {
+        if (request.perfil() == null) {
+            throw new CampoObrigatorioException("perfil");
+        }
+
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(UsuarioNaoEncontradoException::new);
+        usuario.setPerfil(request.perfil());
+
+        return UsuarioDTO.de(usuarioRepository.save(usuario));
     }
 }
