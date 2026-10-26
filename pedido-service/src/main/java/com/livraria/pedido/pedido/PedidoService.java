@@ -27,9 +27,9 @@ public class PedidoService {
         this.clock = clock;
     }
 
-    public Pedido criar(PedidoRequest request) {
+    public Pedido criar(PedidoRequest request, Long usuarioId) {
         Pedido pedido = pedidoRepository.save(
-                new Pedido(request.itens(), novaTransacaoId(), LocalDateTime.now(clock)));
+                new Pedido(request.itens(), usuarioId, request.cartaoId(), novaTransacaoId(), LocalDateTime.now(clock)));
 
         Evento evento = eventoService.salvar(new Evento(pedido, LocalDateTime.now(clock)));
         sagaProducer.iniciar(evento);

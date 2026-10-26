@@ -7,9 +7,9 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface EventoRepository extends MongoRepository<Evento, String> {
 
-    List<Evento> findAllByOrderByCriadoEmDesc();
+    List<Evento> findAllByPedidoUsuarioIdOrderByCriadoEmDesc(Long usuarioId);
 
-    Optional<Evento> findTop1ByPedidoIdOrderByCriadoEmDesc(String pedidoId);
+    Optional<Evento> findTop1ByPedidoIdAndPedidoUsuarioIdOrderByCriadoEmDesc(String pedidoId, Long usuarioId);
 
-    Optional<Evento> findTop1ByTransacaoIdOrderByCriadoEmDesc(String transacaoId);
+    Optional<Evento> findTop1ByTransacaoIdAndPedidoUsuarioIdOrderByCriadoEmDesc(String transacaoId, Long usuarioId);
 }

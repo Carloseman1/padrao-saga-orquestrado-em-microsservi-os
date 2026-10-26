@@ -24,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.livraria.pedido.evento.Evento;
 import com.livraria.pedido.evento.EventoService;
 import com.livraria.pedido.pedido.dto.PedidoRequest;
+import com.livraria.pedido.pedido.exceptions.CartaoNaoInformadoException;
 import com.livraria.pedido.pedido.exceptions.PedidoSemItensException;
 import com.livraria.pedido.saga.SagaProducer;
 
@@ -45,6 +46,9 @@ class PedidoServiceTest {
 
     private PedidoService pedidoService;
 
+    private static final long USUARIO = 7L;
+    private static final Long CARTAO = 1L;
+
     @BeforeEach
     void criarService() {
         pedidoService = new PedidoService(pedidoRepository, eventoService, sagaProducer, OUTUBRO_DE_2026);
@@ -55,7 +59,7 @@ class PedidoServiceTest {
         devolverOPedidoSalvoComId("pedido-1");
         devolverOEventoSalvo();
 
-        Pedido pedido = pedidoService.criar(new PedidoRequest(List.of(DOM_CASMURRO)));
+        Pedido pedido = pedidoService.criar(new PedidoRequest(List.of(DOM_CASMURRO), CARTAO), USUARIO);
 
         assertThat(pedido.getId()).isEqualTo("pedido-1");
         assertThat(pedido.getItens()).containsExactly(DOM_CASMURRO);
@@ -68,7 +72,7 @@ class PedidoServiceTest {
         devolverOPedidoSalvoComId("pedido-1");
         devolverOEventoSalvo();
 
-        Pedido pedido = pedidoService.criar(new PedidoRequest(List.of(DOM_CASMURRO)));
+        Pedido pedido = pedidoService.criar(new PedidoRequest(List.of(DOM_CASMURRO), CARTAO), USUARIO);
 
         ArgumentCaptor<Evento> capturado = ArgumentCaptor.forClass(Evento.class);
         verify(sagaProducer).iniciar(capturado.capture());
@@ -81,7 +85,7 @@ class PedidoServiceTest {
 
     @Test
     void recusa_pedido_sem_itens() {
-        assertThatThrownBy(() -> pedidoService.criar(new PedidoRequest(List.of())))
+        assertThatThrownBy(() -> pedidoService.criar(new PedidoRequest(List.of(), CARTAO), USUARIO))
                 .isInstanceOf(PedidoSemItensException.class);
 
         verify(pedidoRepository, never()).save(any());
@@ -90,8 +94,27 @@ class PedidoServiceTest {
 
     @Test
     void recusa_pedido_com_itens_nulos() {
-        assertThatThrownBy(() -> pedidoService.criar(new PedidoRequest(null)))
+        assertThatThrownBy(() -> pedidoService.criar(new PedidoRequest(null, CARTAO), USUARIO))
                 .isInstanceOf(PedidoSemItensException.class);
+    }
+
+    @Test
+    void o_pedido_fica_com_o_usuario_logado() {
+        devolverOPedidoSalvoComId("pedido-1");
+        devolverOEventoSalvo();
+
+        Pedido pedido = pedidoService.criar(new PedidoRequest(List.of(DOM_CASMURRO), CARTAO), USUARIO);
+
+        assertThat(pedido.getUsuarioId()).isEqualTo(USUARIO);
+        assertThat(pedido.getCartaoId()).isEqualTo(CARTAO);
+    }
+
+    @Test
+    void recusa_pedido_sem_cartao() {
+        assertThatThrownBy(() -> pedidoService.criar(new PedidoRequest(List.of(DOM_CASMURRO), null), USUARIO))
+                .isInstanceOf(CartaoNaoInformadoException.class);
+
+        verify(pedidoRepository, never()).save(any());
     }
 
     private void devolverOPedidoSalvoComId(String id) {

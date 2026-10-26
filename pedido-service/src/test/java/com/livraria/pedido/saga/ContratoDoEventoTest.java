@@ -39,14 +39,28 @@ class ContratoDoEventoTest {
 
     @Test
     void evento_criado_aqui_sai_com_a_versao_atual() throws IOException {
+        JsonNode enviado = arvore(conversorJson.paraJson(eventoNovo()));
+
+        assertThat(enviado.path("versao").asInt()).isEqualTo(Evento.VERSAO_ATUAL);
+    }
+
+    @Test
+    void o_usuario_e_o_cartao_do_pedido_viajam_no_evento() throws IOException {
+        JsonNode enviado = arvore(conversorJson.paraJson(eventoNovo()));
+
+        assertThat(enviado.path("pedido").path("usuarioId").asLong()).isEqualTo(7L);
+        assertThat(enviado.path("pedido").path("cartaoId").asLong()).isEqualTo(1L);
+    }
+
+    private Evento eventoNovo() {
         Pedido pedido = new Pedido(
                 List.of(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("39.90")), 1)),
+                7L,
+                1L,
                 "transacao-1",
                 LocalDateTime.of(2026, 10, 13, 10, 0, 5));
 
-        JsonNode enviado = arvore(conversorJson.paraJson(new Evento(pedido, LocalDateTime.of(2026, 10, 13, 10, 0, 5))));
-
-        assertThat(enviado.path("versao").asInt()).isEqualTo(Evento.VERSAO_ATUAL);
+        return new Evento(pedido, LocalDateTime.of(2026, 10, 13, 10, 0, 5));
     }
 
     @Test

@@ -32,6 +32,8 @@ class EventoServiceTest {
 
     private static final Clock OUTUBRO_DE_2026 =
             Clock.fixed(Instant.parse("2026-10-12T10:00:00Z"), ZoneId.of("UTC"));
+    private static final Long USUARIO = 7L;
+    private static final Long OUTRO_USUARIO = 8L;
 
     @Mock
     private EventoRepository eventoRepository;
@@ -44,25 +46,35 @@ class EventoServiceTest {
     }
 
     @Test
-    void busca_pelo_pedido_quando_informado() {
+    void busca_pelo_pedido_do_usuario_quando_informado() {
         Evento evento = evento("pedido-1");
-        when(eventoRepository.findTop1ByPedidoIdOrderByCriadoEmDesc("pedido-1")).thenReturn(Optional.of(evento));
+        when(eventoRepository.findTop1ByPedidoIdAndPedidoUsuarioIdOrderByCriadoEmDesc("pedido-1", USUARIO))
+                .thenReturn(Optional.of(evento));
 
-        assertThat(eventoService.buscar(new FiltrosEvento("pedido-1", null))).isEqualTo(evento);
+        assertThat(eventoService.buscar(new FiltrosEvento("pedido-1", null), USUARIO)).isEqualTo(evento);
     }
 
     @Test
     void busca_pela_transacao_quando_pedido_nao_informado() {
         Evento evento = evento("pedido-1");
-        when(eventoRepository.findTop1ByTransacaoIdOrderByCriadoEmDesc("transacao-1"))
+        when(eventoRepository.findTop1ByTransacaoIdAndPedidoUsuarioIdOrderByCriadoEmDesc("transacao-1", USUARIO))
                 .thenReturn(Optional.of(evento));
 
-        assertThat(eventoService.buscar(new FiltrosEvento(" ", "transacao-1"))).isEqualTo(evento);
+        assertThat(eventoService.buscar(new FiltrosEvento(" ", "transacao-1"), USUARIO)).isEqualTo(evento);
+    }
+
+    @Test
+    void pedido_de_outro_usuario_responde_como_nao_encontrado() {
+        when(eventoRepository.findTop1ByPedidoIdAndPedidoUsuarioIdOrderByCriadoEmDesc("pedido-1", OUTRO_USUARIO))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> eventoService.buscar(new FiltrosEvento("pedido-1", null), OUTRO_USUARIO))
+                .isInstanceOf(EventoNaoEncontradoException.class);
     }
 
     @Test
     void recusa_busca_sem_filtros() {
-        assertThatThrownBy(() -> eventoService.buscar(new FiltrosEvento(null, "")))
+        assertThatThrownBy(() -> eventoService.buscar(new FiltrosEvento(null, ""), USUARIO))
                 .isInstanceOf(FiltroNaoInformadoException.class);
 
         verifyNoInteractions(eventoRepository);
@@ -70,9 +82,10 @@ class EventoServiceTest {
 
     @Test
     void avisa_quando_evento_nao_existe() {
-        when(eventoRepository.findTop1ByPedidoIdOrderByCriadoEmDesc("inexistente")).thenReturn(Optional.empty());
+        when(eventoRepository.findTop1ByPedidoIdAndPedidoUsuarioIdOrderByCriadoEmDesc("inexistente", USUARIO))
+                .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> eventoService.buscar(new FiltrosEvento("inexistente", null)))
+        assertThatThrownBy(() -> eventoService.buscar(new FiltrosEvento("inexistente", null), USUARIO))
                 .isInstanceOf(EventoNaoEncontradoException.class);
     }
 
@@ -89,16 +102,17 @@ class EventoServiceTest {
     }
 
     @Test
-    void lista_eventos_do_mais_recente_para_o_mais_antigo() {
+    void lista_so_os_eventos_do_usuario_do_mais_recente_para_o_mais_antigo() {
         List<Evento> eventos = List.of(evento("pedido-2"), evento("pedido-1"));
-        when(eventoRepository.findAllByOrderByCriadoEmDesc()).thenReturn(eventos);
+        when(eventoRepository.findAllByPedidoUsuarioIdOrderByCriadoEmDesc(USUARIO)).thenReturn(eventos);
 
-        assertThat(eventoService.listar()).isEqualTo(eventos);
+        assertThat(eventoService.listar(USUARIO)).isEqualTo(eventos);
     }
 
     private Evento evento(String pedidoId) {
         Pedido pedido = new Pedido(
-                List.of(new ItemPedido(new Livro("IRACEMA", new BigDecimal("25.00")), 1)), "transacao-1", LocalDateTime.now(OUTUBRO_DE_2026));
+                List.of(new ItemPedido(new Livro("IRACEMA", new BigDecimal("25.00")), 1)),
+                USUARIO, 1L, "transacao-1", LocalDateTime.now(OUTUBRO_DE_2026));
         pedido.setId(pedidoId);
         return new Evento(pedido, LocalDateTime.now(OUTUBRO_DE_2026));
     }

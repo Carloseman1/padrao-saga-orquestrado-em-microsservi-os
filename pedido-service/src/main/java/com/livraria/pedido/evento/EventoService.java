@@ -35,18 +35,18 @@ public class EventoService {
         log.info("Saga do pedido {} finalizada. Transacao: {}", evento.getPedidoId(), evento.getTransacaoId());
     }
 
-    public List<Evento> listar() {
-        return eventoRepository.findAllByOrderByCriadoEmDesc();
+    public List<Evento> listar(Long usuarioId) {
+        return eventoRepository.findAllByPedidoUsuarioIdOrderByCriadoEmDesc(usuarioId);
     }
 
-    public Evento buscar(FiltrosEvento filtros) {
+    public Evento buscar(FiltrosEvento filtros, Long usuarioId) {
         if (filtros.temPedidoId()) {
-            return eventoRepository.findTop1ByPedidoIdOrderByCriadoEmDesc(filtros.pedidoId())
+            return eventoRepository.findTop1ByPedidoIdAndPedidoUsuarioIdOrderByCriadoEmDesc(filtros.pedidoId(), usuarioId)
                     .orElseThrow(EventoNaoEncontradoException::new);
         }
 
         if (filtros.temTransacaoId()) {
-            return eventoRepository.findTop1ByTransacaoIdOrderByCriadoEmDesc(filtros.transacaoId())
+            return eventoRepository.findTop1ByTransacaoIdAndPedidoUsuarioIdOrderByCriadoEmDesc(filtros.transacaoId(), usuarioId)
                     .orElseThrow(EventoNaoEncontradoException::new);
         }
 
