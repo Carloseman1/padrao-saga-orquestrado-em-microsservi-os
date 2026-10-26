@@ -227,6 +227,24 @@ services:
     ports:
       - "8092:8092"
 
+  usuario-service:
+    build: ./usuario-service
+    container_name: usuario-service
+    depends_on:
+      usuario-db:
+        condition: service_healthy
+    networks:
+      - livraria-saga
+    environment:
+      DB_HOST: usuario-db
+      DB_PORT: 5432
+      DB_NAME: usuario-db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET:-segredo-de-desenvolvimento-da-livraria-trocar-em-producao}
+    ports:
+      - "8093:8093"
+
 networks:
   livraria-saga:
     driver: bridge

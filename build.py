@@ -14,6 +14,7 @@ SERVICOS = [
     "validacao-livro-service",
     "pagamento-service",
     "estoque-service",
+    "usuario-service",
 ]
 
 PORTAS = {
@@ -24,6 +25,7 @@ PORTAS = {
     8090: "validacao-livro-service",
     8091: "pagamento-service",
     8092: "estoque-service",
+    8093: "usuario-service",
     9092: "kafka",
     5432: "validacao-livro-db",
     5433: "pagamento-db",
@@ -53,7 +55,7 @@ def porta_ocupada(porta):
 def testar(servico):
     pasta = RAIZ / servico
     wrapper = pasta / ("mvnw.cmd" if sys.platform == "win32" else "mvnw")
-    resultado = executar([str(wrapper), "-q", "-B", "test"], pasta=pasta, capturar=True)
+    resultado = executar([str(wrapper), "-q", "-B", "clean", "test"], pasta=pasta, capturar=True)
     return servico, resultado.returncode == 0, resultado.stdout + resultado.stderr
 
 
@@ -73,8 +75,14 @@ def rodar_testes():
     return not falhas
 
 
+def servicos_rodando():
+    resultado = executar(["docker", "compose", "ps", "--services", "--status", "running"], capturar=True)
+    return set(resultado.stdout.split())
+
+
 def avisar_portas_ocupadas():
-    ocupadas = [porta for porta in PORTAS if porta_ocupada(porta)]
+    rodando = servicos_rodando()
+    ocupadas = [porta for porta, servico in PORTAS.items() if servico not in rodando and porta_ocupada(porta)]
 
     for porta in ocupadas:
         print(f"  Atenção: a porta {porta} ({PORTAS[porta]}) já está em uso por outro processo.")
@@ -117,18 +125,19 @@ def aguardar_servicos():
     return not falharam and not pendentes, falharam + sorted(pendentes)
 
 
-def subir(com_testes):
+def subir(com_testes, recriar):
     if com_testes and not rodar_testes():
         print("\nTestes falharam. Nada foi iniciado.")
         return 1
 
-    print("Derrubando os containers deste projeto...")
-    executar(["docker", "compose", "down"])
+    if recriar:
+        print("Derrubando os containers deste projeto...")
+        executar(["docker", "compose", "down"])
 
     if avisar_portas_ocupadas():
         print("  Feche esses processos se algum serviço não subir.\n")
 
-    print("Construindo as imagens e subindo os containers...")
+    print("Subindo os containers (só reconstrói e reinicia o que mudou)...")
     if executar(["docker", "compose", "up", "--build", "-d"]).returncode != 0:
         print("\nFalha no docker compose.")
         return 1
@@ -142,10 +151,11 @@ def subir(com_testes):
         return 1
 
     print("\nTudo no ar.")
-    print("  Swagger do pedido-service: http://localhost:3000/swagger-ui.html")
-    print("  Redpanda Console:          http://localhost:8081")
-    print("  MongoDB (mongo-express):   http://localhost:8082")
-    print("  Para ver a saga rodando:   py demo.py")
+    print("  Swagger do pedido-service:  http://localhost:3000/swagger-ui.html")
+    print("  Swagger do usuario-service: http://localhost:8093/swagger-ui.html")
+    print("  Redpanda Console:           http://localhost:8081")
+    print("  MongoDB (mongo-express):    http://localhost:8082")
+    print("  Para ver a saga rodando:    py demo.py")
     return 0
 
 
@@ -157,6 +167,8 @@ def parar():
 def main():
     parser = argparse.ArgumentParser(description="Sobe ou derruba a saga da livraria no Docker.")
     parser.add_argument("--testes", action="store_true", help="roda os testes antes de subir")
+    parser.add_argument("--recriar", action="store_true",
+                        help="derruba tudo e sobe do zero, com os bancos no estado inicial")
     parser.add_argument("--parar", action="store_true", help="derruba os containers e sai")
     argumentos = parser.parse_args()
 
@@ -167,7 +179,7 @@ def main():
     if argumentos.parar:
         return parar()
 
-    return subir(argumentos.testes)
+    return subir(argumentos.testes, argumentos.recriar)
 
 
 if __name__ == "__main__":

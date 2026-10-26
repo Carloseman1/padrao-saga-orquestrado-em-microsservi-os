@@ -4,7 +4,7 @@ Projeto de estudo do padrão Saga orquestrado. O domínio é uma livraria: um pe
 
 ## Tecnologias
 
-Java 21, Spring Boot 3.5, Apache Kafka, PostgreSQL 16 com Flyway, MongoDB 7 e Docker. O Redpanda Console sobe junto para ver as mensagens no Kafka. Os testes usam JUnit 5, Mockito e AssertJ.
+Java 21, Spring Boot 3.5, Apache Kafka, PostgreSQL 16 com Flyway, MongoDB 7 e Docker. O login usa JWT (jjwt) gravado em cookie e senha com BCrypt. O Redpanda Console sobe junto para ver as mensagens no Kafka. Os testes usam JUnit 5, Mockito e AssertJ.
 
 ## Como rodar
 
@@ -16,7 +16,7 @@ O jeito mais simples é o script da raiz, que precisa de Python 3 (no Windows o 
 py build.py
 ```
 
-Ele derruba os containers antigos do projeto, sobe tudo com `docker compose up --build -d` e espera cada serviço iniciar. Também dá pra rodar `py build.py --testes` para rodar os testes antes de subir, e `py build.py --parar` para derrubar tudo.
+Ele roda `docker compose up --build -d` e espera cada serviço iniciar. Os containers que já estão no ar e não mudaram continuam rodando; só o serviço cujo código mudou é reconstruído e reiniciado, então a partir da segunda vez sobe bem mais rápido. Também dá pra rodar `py build.py --testes` para rodar os testes antes de subir, `py build.py --recriar` para derrubar tudo e subir do zero, e `py build.py --parar` para derrubar tudo.
 
 Sem o script:
 
@@ -29,10 +29,10 @@ A primeira vez demora alguns minutos porque o build das aplicações roda dentro
 Para desenvolver, prefiro subir só os bancos e o Kafka no Docker e rodar os serviços pela IDE:
 
 ```bash
-docker compose up -d pedido-db validacao-livro-db pagamento-db estoque-db kafka redpanda-console
+docker compose up -d pedido-db validacao-livro-db pagamento-db estoque-db usuario-db kafka redpanda-console
 ```
 
-Depois é rodar a classe `*Application` de cada serviço, ou `./mvnw spring-boot:run` dentro da pasta dele. O pagamento e o estoque precisam da variável `DB_PORT` (5433 e 5434), porque cada Postgres do compose está numa porta diferente.
+Depois é rodar a classe `*Application` de cada serviço, ou `./mvnw spring-boot:run` dentro da pasta dele. O pagamento e o estoque precisam da variável `DB_PORT` (5433 e 5434), porque cada Postgres do compose está numa porta diferente. O usuario-service já vem com a porta 5435 como padrão.
 
 Se os containers dos serviços estiverem rodando, não suba os mesmos serviços pelo `mvnw`, as portas já vão estar ocupadas.
 
@@ -44,7 +44,7 @@ Com tudo no ar, o `demo.py` faz pedidos de exemplo e mostra cada etapa por onde 
 py demo.py
 ```
 
-Ele roda cinco cenários: compra aprovada, falha no estoque, falha no pagamento, livro fora do catálogo e uma mensagem com JSON quebrado indo para a DLT. Dá pra rodar só um, por exemplo `py demo.py estoque`. Cada compra aprovada baixa o estoque de verdade, então depois de muitas execuções o livro acaba. Para voltar ao estoque inicial, é só rodar `py build.py` de novo, porque os bancos sobem do zero.
+Ele roda cinco cenários: compra aprovada, falha no estoque, falha no pagamento, livro fora do catálogo e uma mensagem com JSON quebrado indo para a DLT. Dá pra rodar só um, por exemplo `py demo.py estoque`. Cada compra aprovada baixa o estoque de verdade, então depois de muitas execuções o livro acaba. Para voltar ao estoque inicial, rode `py build.py --recriar`, que derruba os containers e sobe os bancos do zero.
 
 ```
 === Falha no estoque ===
@@ -92,11 +92,12 @@ As mensagens trocadas no Kafka aparecem no Redpanda Console, em http://localhost
 | validacao-livro-service | 8090 |
 | pagamento-service | 8091 |
 | estoque-service | 8092 |
+| usuario-service | 8093 |
 | Redpanda Console | 8081 |
 | mongo-express (tela do MongoDB) | 8082 |
 | Kafka | 9092 |
 | MongoDB | 27017 |
-| PostgreSQL (validação, pagamento, estoque) | 5432, 5433, 5434 |
+| PostgreSQL (validação, pagamento, estoque, usuário) | 5432, 5433, 5434, 5435 |
 
 Usuário e senha dos bancos estão no `docker-compose.yml`. São só de desenvolvimento.
 
@@ -124,6 +125,14 @@ flowchart LR
     est[estoque-service]
     pg3[(PostgreSQL<br/>estoque-db)]
 
+    usu[usuario-service]
+    pg4[(PostgreSQL<br/>usuario-db)]
+    viacep([ViaCEP])
+
+    cliente -- HTTP --> usu
+    usu --- pg4
+    usu -- HTTP --> viacep
+
     cliente -- HTTP --> api
     api --- mongo
     api -- inicio-saga --> kafka
@@ -144,6 +153,8 @@ Na saga, quem recebe o pedido é o pedido-service. Ele grava o pedido no MongoDB
 O orquestrador é o único que conhece a ordem das etapas. Os outros serviços só sabem fazer e desfazer a própria parte: cada um escuta um tópico para executar (`*-sucesso`) e outro para desfazer (`*-falha`), e sempre responde no tópico `orquestrador`. Se eu quiser mudar a ordem das etapas, mexo só no orquestrador.
 
 Cada serviço tem o próprio banco e nenhum acessa o banco do outro. Tudo o que um serviço precisa saber do pedido vem dentro do evento.
+
+O usuario-service fica fora da saga. Ele cuida do cadastro, do login e da recuperação de senha, e consulta o ViaCEP para preencher o endereço no cadastro. No login ele grava o JWT num cookie, e a ideia é que os outros serviços validem esse token por conta própria, sem chamar o usuario-service.
 
 ## Síncrono e assíncrono
 
@@ -303,16 +314,47 @@ erDiagram
         bigint estoque_id FK
         varchar pedido_id "vem do evento"
         varchar transacao_id "vem do evento"
-        integer quantidade_pedida
-        integer quantidade_anterior "usada no rollback"
+        integer quantidade_pedida "devolvida no rollback"
+        integer quantidade_anterior "só para auditoria"
         integer quantidade_nova
         timestamp criado_em
+        timestamp estornado_em "preenchido no rollback"
+    }
+```
+
+### usuario-db (PostgreSQL)
+
+```mermaid
+erDiagram
+    USUARIO ||--o{ RECUPERACAO_SENHA : "pede"
+    USUARIO {
+        bigint id PK
+        varchar nome
+        varchar sobrenome
+        varchar email UK
+        varchar senha "hash BCrypt"
+        boolean ativo
+        varchar cep
+        varchar rua "vem do ViaCEP"
+        varchar bairro "vem do ViaCEP"
+        varchar cidade "vem do ViaCEP"
+        varchar estado "vem do ViaCEP"
+        varchar numero
+        varchar complemento
+    }
+    RECUPERACAO_SENHA {
+        bigint id PK
+        bigint usuario_id FK
+        varchar token UK
+        timestamp expira_em
+        timestamp usado_em "uso único"
     }
 ```
 
 ```
 Estoque (1) ──── (N) MovimentacaoEstoque
 Pedido  (1) ──── (N) Evento                 referência pelo pedidoId, sem chave estrangeira
+Usuario (1) ──── (N) RecuperacaoSenha
 ```
 
 ## Decisões que tomei
@@ -346,11 +388,24 @@ pagamento-service/src/main/java/com/livraria/pagamento/
 └── shared/       configurações e tratamento de erros
 ```
 
+O usuario-service segue o mesmo padrão, com os pacotes trazidos do card-service:
+
+```
+usuario-service/src/main/java/com/livraria/usuario/
+├── usuario/            cadastro, login, recuperação de senha e bloqueio de tentativas
+├── endereco/           consulta de endereço pelo CEP
+├── integracao/viacep/  cliente HTTP do ViaCEP e os erros de comunicação
+├── seguranca/          JWT, cookie de sessão, filtro de autenticação e logout
+└── shared/             configurações e tratamento de erros
+```
+
 As migrations ficam em `src/main/resources/db/migration` de cada serviço com banco relacional. O `ddl-auto` está em `validate`, então quem cria e altera tabela é só o Flyway.
 
 ## Endpoints
 
-Todos no pedido-service:
+Cada serviço tem o próprio Swagger em `http://localhost:<porta>/swagger-ui.html`.
+
+### pedido-service (3000)
 
 | Método | Endpoint | O que faz |
 |---|---|---|
@@ -372,6 +427,38 @@ Corpo do `POST /api/pedidos`:
 
 O `valorTotal` vem zerado na resposta do `POST`. Quem calcula é o pagamento, e o valor aparece no evento final.
 
+### usuario-service (8093)
+
+| Método | Endpoint | Login? | O que faz |
+|---|---|---|---|
+| POST | `/api/usuarios` | não | Cadastra o usuário e preenche o endereço pelo CEP |
+| POST | `/api/usuarios/login` | não | Confere a senha e grava o JWT no cookie `livraria_sessao` |
+| POST | `/api/usuarios/esqueci-senha` | não | Gera um token de recuperação; por enquanto ele sai no log, não por e-mail |
+| POST | `/api/usuarios/redefinir-senha` | não | Troca a senha com o token de recuperação |
+| GET | `/api/endereco/{cep}` | não | Consulta o endereço no ViaCEP |
+| DELETE | `/api/sessao` | sim | Logout: invalida o token e apaga o cookie |
+
+Corpo do cadastro e do login:
+
+```json
+{ "nome": "Carlos", "sobrenome": "Silva", "email": "carlos@teste.com", "senha": "Senha@123", "cep": "01001000", "numero": "100" }
+```
+
+```json
+{ "email": "carlos@teste.com", "senha": "Senha@123" }
+```
+
+O login responde com `id`, `nome` e `email`. O token não vem no corpo, só no cabeçalho `Set-Cookie`, e o navegador passa a enviá-lo sozinho.
+
+### validacao-livro-service (8090) e estoque-service (8092)
+
+| Serviço | Método | Endpoint | O que faz |
+|---|---|---|---|
+| validacao-livro | POST | `/api/livros` | Cadastra o livro no catálogo e avisa o estoque pelo Kafka |
+| validacao-livro | GET | `/api/livros` | Lista o catálogo |
+| estoque | POST | `/api/estoques/entradas` | Soma uma entrada ao estoque de um livro |
+| estoque | GET | `/api/estoques` | Lista o estoque |
+
 Os erros seguem sempre o mesmo formato:
 
 ```json
@@ -381,6 +468,8 @@ Os erros seguem sempre o mesmo formato:
 ## Configuração
 
 As conexões vêm de variáveis de ambiente, com valores padrão para rodar local: `KAFKA_BROKER` em todos os serviços, `MONGO_DB_URI` no pedido, e `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` nos serviços com Postgres. No `docker-compose.yml` elas já apontam para os containers.
+
+No usuario-service, `JWT_SECRET` é o segredo que assina os tokens (pelo menos 32 caracteres) e `SESSAO_COOKIE_SEGURO=true` faz o cookie só trafegar por https. Os dois têm valor padrão de desenvolvimento; em produção, o segredo tem que vir de fora do código.
 
 ## O que ainda falta
 
