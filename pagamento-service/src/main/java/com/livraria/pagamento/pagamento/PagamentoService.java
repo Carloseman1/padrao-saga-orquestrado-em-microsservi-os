@@ -3,6 +3,7 @@ package com.livraria.pagamento.pagamento;
 import java.time.Clock;
 import java.time.LocalDateTime;
 
+import com.livraria.pagamento.cartao.CartaoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -24,16 +25,21 @@ public class PagamentoService {
     private final PagamentoRepository pagamentoRepository;
     private final OrquestradorProducer orquestradorProducer;
     private final Clock clock;
+    private final CartaoService cartaoService;
 
-    public PagamentoService(PagamentoRepository pagamentoRepository, OrquestradorProducer orquestradorProducer,
-                            Clock clock) {
+    public PagamentoService(PagamentoRepository pagamentoRepository, CartaoService cartaoService,
+                            OrquestradorProducer orquestradorProducer, Clock clock) {
         this.pagamentoRepository = pagamentoRepository;
+        this.cartaoService = cartaoService;
         this.orquestradorProducer = orquestradorProducer;
         this.clock = clock;
     }
 
     public void realizar(Evento evento) {
         try {
+            cartaoService.exigirValidoParaPagamento(
+                    evento.getPedido().getCartaoId(), evento.getPedido().getUsuarioId());
+
             Pagamento pagamento = criarPendente(evento);
             pagamento.aprovar(agora());
             pagamentoRepository.save(pagamento);

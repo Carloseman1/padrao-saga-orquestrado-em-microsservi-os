@@ -20,6 +20,8 @@ public class Pedido {
 
     private String id;
     private List<ItemPedido> itens;
+    private Long usuarioId;
+    private Long cartaoId;
     private String transacaoId;
     private BigDecimal valorTotal;
     private int quantidadeTotal;

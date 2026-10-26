@@ -2,6 +2,7 @@ package com.livraria.pagamento.pagamento;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -20,6 +21,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.livraria.pagamento.cartao.CartaoService;
+import com.livraria.pagamento.cartao.exceptions.CartaoNaoEncontradoException;
+import com.livraria.pagamento.cartao.exceptions.CartaoVencidoException;
 import com.livraria.pagamento.saga.Evento;
 import com.livraria.pagamento.saga.Historico;
 import com.livraria.pagamento.saga.ItemPedido;
@@ -35,6 +39,8 @@ class PagamentoServiceTest {
             Clock.fixed(Instant.parse("2026-10-12T10:00:00Z"), ZoneId.of("UTC"));
     private static final String PEDIDO = "pedido-1";
     private static final String TRANSACAO = "transacao-1";
+    private static final Long USUARIO = 7L;
+    private static final Long CARTAO = 1L;
 
     @Mock
     private PagamentoRepository pagamentoRepository;
@@ -42,11 +48,14 @@ class PagamentoServiceTest {
     @Mock
     private OrquestradorProducer orquestradorProducer;
 
+    @Mock
+    private CartaoService cartaoService;
+
     private PagamentoService pagamentoService;
 
     @BeforeEach
     void criarService() {
-        pagamentoService = new PagamentoService(pagamentoRepository, orquestradorProducer, OUTUBRO_DE_2026);
+        pagamentoService = new PagamentoService(pagamentoRepository, cartaoService, orquestradorProducer, OUTUBRO_DE_2026);
     }
 
     @Test
@@ -125,6 +134,30 @@ class PagamentoServiceTest {
         verify(orquestradorProducer).enviar(evento);
     }
 
+    @Test
+    void pede_rollback_quando_o_cartao_nao_e_do_usuario() {
+        doThrow(new CartaoNaoEncontradoException()).when(cartaoService).exigirValidoParaPagamento(CARTAO, USUARIO);
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 1));
+
+        pagamentoService.realizar(evento);
+
+        assertThat(evento.getStatus()).isEqualTo(StatusSaga.ROLLBACK_PENDENTE);
+        assertThat(ultimaMensagem(evento)).isEqualTo("Falha ao realizar o pagamento: Cartão não encontrado.");
+        verify(pagamentoRepository, never()).save(any());
+    }
+
+    @Test
+    void pede_rollback_quando_o_cartao_esta_vencido() {
+        doThrow(new CartaoVencidoException()).when(cartaoService).exigirValidoParaPagamento(CARTAO, USUARIO);
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 1));
+
+        pagamentoService.realizar(evento);
+
+        assertThat(evento.getStatus()).isEqualTo(StatusSaga.ROLLBACK_PENDENTE);
+        assertThat(ultimaMensagem(evento)).isEqualTo("Falha ao realizar o pagamento: O cartão já está vencido.");
+        verify(pagamentoRepository, never()).save(any());
+    }
+
     private void devolverOPagamentoSalvo() {
         when(pagamentoRepository.save(any(Pagamento.class))).thenAnswer(invocacao -> invocacao.getArgument(0));
     }
@@ -133,6 +166,8 @@ class PagamentoServiceTest {
         Pedido pedido = new Pedido();
         pedido.setId(PEDIDO);
         pedido.setItens(List.of(itens));
+        pedido.setUsuarioId(USUARIO);
+        pedido.setCartaoId(CARTAO);
 
         Evento evento = new Evento();
         evento.setTransacaoId(TRANSACAO);
