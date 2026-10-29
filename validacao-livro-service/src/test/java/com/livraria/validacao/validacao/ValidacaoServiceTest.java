@@ -2,6 +2,7 @@ package com.livraria.validacao.validacao;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -21,6 +22,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.livraria.validacao.catalogo.LivroRepository;
 import com.livraria.validacao.saga.Evento;
@@ -53,12 +57,13 @@ class ValidacaoServiceTest {
     @BeforeEach
     void criarService() {
         validacaoService = new ValidacaoService(
-                livroRepository, validacaoRepository, orquestradorProducer, OUTUBRO_DE_2026);
+                livroRepository, validacaoRepository, orquestradorProducer,
+                new TransactionTemplate(mock(PlatformTransactionManager.class)), OUTUBRO_DE_2026);
     }
 
     @Test
     void valida_pedido_com_livros_cadastrados() {
-        when(livroRepository.existsByCodigo("DOM_CASMURRO")).thenReturn(true);
+        when(livroRepository.findByCodigo("DOM_CASMURRO")).thenReturn(Optional.of(livroDoCatalogo()));
         Evento evento = evento(item("DOM_CASMURRO"));
 
         validacaoService.validar(evento);
@@ -71,8 +76,19 @@ class ValidacaoServiceTest {
     }
 
     @Test
+    void troca_o_preco_do_cliente_pelo_do_catalogo() {
+        when(livroRepository.findByCodigo("DOM_CASMURRO")).thenReturn(Optional.of(livroDoCatalogo()));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("0.10")), 2));
+
+        validacaoService.validar(evento);
+
+        assertThat(evento.getPedido().getItens().get(0).livro().valorUnitario()).isEqualByComparingTo("39.90");
+        assertThat(evento.getPedido().getItens().get(0).quantidade()).isEqualTo(2);
+    }
+
+    @Test
     void pede_rollback_quando_livro_nao_esta_no_catalogo() {
-        when(livroRepository.existsByCodigo("HARRY_POTTER")).thenReturn(false);
+        when(livroRepository.findByCodigo("HARRY_POTTER")).thenReturn(Optional.empty());
         Evento evento = evento(item("HARRY_POTTER"));
 
         validacaoService.validar(evento);
@@ -104,14 +120,27 @@ class ValidacaoServiceTest {
     }
 
     @Test
-    void pede_rollback_quando_transacao_ja_foi_validada() {
+    void ignora_mensagem_duplicada_sem_responder_ao_orquestrador() {
         when(validacaoRepository.existsByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(true);
         Evento evento = evento(item("DOM_CASMURRO"));
 
         validacaoService.validar(evento);
 
-        assertThat(ultimaMensagem(evento))
-                .isEqualTo("Falha ao validar os livros: Já existe uma validação para esta transação.");
+        assertThat(evento.getStatus()).isNull();
+        verify(validacaoRepository, never()).save(any());
+        verify(orquestradorProducer, never()).enviar(any());
+    }
+
+    @Test
+    void ignora_duplicata_recusada_pelo_banco() {
+        when(livroRepository.findByCodigo("DOM_CASMURRO")).thenReturn(Optional.of(livroDoCatalogo()));
+        when(validacaoRepository.save(any(Validacao.class)))
+                .thenThrow(new DataIntegrityViolationException("uk_validacao_pedido_transacao"));
+        Evento evento = evento(item("DOM_CASMURRO"));
+
+        validacaoService.validar(evento);
+
+        verify(orquestradorProducer, never()).enviar(any());
     }
 
     @Test
@@ -138,6 +167,10 @@ class ValidacaoServiceTest {
         verify(validacaoRepository).save(capturada.capture());
         assertThat(capturada.getValue().isSucesso()).isFalse();
         assertThat(capturada.getValue().getPedidoId()).isEqualTo(PEDIDO);
+    }
+
+    private com.livraria.validacao.catalogo.Livro livroDoCatalogo() {
+        return new com.livraria.validacao.catalogo.Livro("DOM_CASMURRO", "Dom Casmurro", new BigDecimal("39.90"));
     }
 
     private ItemPedido item(String codigo) {

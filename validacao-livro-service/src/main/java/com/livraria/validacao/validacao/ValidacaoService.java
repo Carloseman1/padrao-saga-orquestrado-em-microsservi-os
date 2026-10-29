@@ -1,18 +1,17 @@
 package com.livraria.validacao.validacao;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 
+import com.livraria.validacao.saga.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.livraria.validacao.catalogo.LivroRepository;
-import com.livraria.validacao.saga.Evento;
-import com.livraria.validacao.saga.Livro;
-import com.livraria.validacao.saga.OrquestradorProducer;
-import com.livraria.validacao.saga.Pedido;
-import com.livraria.validacao.saga.StatusSaga;
 import com.livraria.validacao.shared.exception.IErroPadrao;
 import com.livraria.validacao.validacao.exceptions.LivroNaoCadastradoException;
 import com.livraria.validacao.validacao.exceptions.LivroNaoInformadoException;
@@ -29,28 +28,33 @@ public class ValidacaoService {
     private final LivroRepository livroRepository;
     private final ValidacaoRepository validacaoRepository;
     private final OrquestradorProducer orquestradorProducer;
+    private final TransactionTemplate transacao;
     private final Clock clock;
 
     public ValidacaoService(LivroRepository livroRepository, ValidacaoRepository validacaoRepository,
-                            OrquestradorProducer orquestradorProducer, Clock clock) {
+                            OrquestradorProducer orquestradorProducer, TransactionTemplate transacao, Clock clock) {
         this.livroRepository = livroRepository;
         this.validacaoRepository = validacaoRepository;
         this.orquestradorProducer = orquestradorProducer;
+        this.transacao = transacao;
         this.clock = clock;
     }
 
     public void validar(Evento evento) {
         try {
             validarPedido(evento);
-            validacaoRepository.save(
-                    new Validacao(evento.getPedido().getId(), evento.getTransacaoId(), true, agora()));
             evento.registrar(ORIGEM, StatusSaga.SUCESSO, "Livros validados com sucesso.", agora());
+            gravarComResposta(new Validacao(evento.getPedido().getId(), evento.getTransacaoId(), true, agora()),
+                    evento);
+        } catch (ValidacaoDuplicadaException ex) {
+            log.warn("Mensagem duplicada ignorada: a validação do pedido {} na transação {} já foi processada",
+                    evento.getPedido().getId(), evento.getTransacaoId());
         } catch (RuntimeException ex) {
             log.error("Erro ao validar os livros do pedido", ex);
             evento.registrar(ORIGEM, StatusSaga.ROLLBACK_PENDENTE,
                     "Falha ao validar os livros: " + motivo(ex), agora());
+            orquestradorProducer.enviar(evento);
         }
-        orquestradorProducer.enviar(evento);
     }
 
     public void desfazer(Evento evento) {
@@ -60,10 +64,8 @@ public class ValidacaoService {
                 .orElseGet(() -> new Validacao(pedidoId, evento.getTransacaoId(), false, agora()));
 
         validacao.marcarFalha(agora());
-        validacaoRepository.save(validacao);
-
         evento.registrar(ORIGEM, StatusSaga.FALHA, "Rollback executado na validação dos livros.", agora());
-        orquestradorProducer.enviar(evento);
+        gravarComResposta(validacao, evento);
     }
 
     private void validarPedido(Evento evento) {
@@ -81,16 +83,33 @@ public class ValidacaoService {
             throw new ValidacaoDuplicadaException();
         }
 
-        pedido.getItens().forEach(item -> validarLivro(item.livro()));
+        pedido.setItens(pedido.getItens().stream()
+                .map(this::comPrecoDoCatalogo)
+                .toList());
     }
 
-    private void validarLivro(Livro livro) {
+    private ItemPedido comPrecoDoCatalogo(ItemPedido item) {
+        Livro livro = item.livro();
+
         if (livro == null || vazio(livro.codigo())) {
             throw new LivroNaoInformadoException();
         }
 
-        if (!livroRepository.existsByCodigo(livro.codigo())) {
-            throw new LivroNaoCadastradoException();
+        BigDecimal precoDoCatalogo = livroRepository.findByCodigo(livro.codigo())
+                .orElseThrow(LivroNaoCadastradoException::new)
+                .getPreco();
+
+        return new ItemPedido(new Livro(livro.codigo(), precoDoCatalogo), item.quantidade());
+    }
+
+    private void gravarComResposta(Validacao validacao, Evento evento) {
+        try {
+            transacao.executeWithoutResult(status -> {
+                validacaoRepository.save(validacao);
+                orquestradorProducer.enviar(evento);
+            });
+        } catch (DataIntegrityViolationException ex) {
+            throw new ValidacaoDuplicadaException();
         }
     }
 
