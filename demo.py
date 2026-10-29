@@ -1,12 +1,19 @@
 import argparse
+import http.cookiejar
 import json
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime
 
 API = "http://localhost:3000/api"
+USUARIOS = "http://localhost:8093/api/usuarios"
+CARTOES = "http://localhost:8091/api/cartoes"
+CLIENTE = ("cliente@livraria.com", "Cliente@123")
+ADMIN = ("admin@livraria.com", "Admin@123")
+CARTAO_DE_TESTE = "4111111111111111"
 MONGO_EXPRESS = "http://localhost:8082/db/pedido-db"
 REDPANDA = "http://localhost:8081/topics"
 TEMPO_LIMITE_SEGUNDOS = 30
@@ -45,8 +52,9 @@ CENARIOS = {
     },
     "pagamento": {
         "titulo": "Falha no pagamento",
-        "explicacao": "Livro a R$ 0,05, abaixo do mínimo de R$ 0,10. A validação passa, o pagamento recusa e a validação é desfeita.",
-        "itens": [item("DOM_CASMURRO", 0.05, 1)],
+        "explicacao": "O cliente tenta pagar com um cartão cadastrado pelo admin. A validação passa, o pagamento recusa e a validação é desfeita.",
+        "itens": [item("DOM_CASMURRO", 39.90, 1)],
+        "cartao_do_admin": True,
     },
     "livro": {
         "titulo": "Livro fora do catálogo",
@@ -56,16 +64,42 @@ CENARIOS = {
 }
 
 
-def chamar_api(metodo, caminho, corpo=None):
+def nova_sessao():
+    return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+
+def chamar(sessao, metodo, url, corpo=None):
     dados = json.dumps(corpo).encode("utf-8") if corpo else None
     requisicao = urllib.request.Request(
-        API + caminho, data=dados, method=metodo, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(requisicao, timeout=10) as resposta:
-        return json.loads(resposta.read().decode("utf-8"))
+        url, data=dados, method=metodo, headers={"Content-Type": "application/json"})
+    with sessao.open(requisicao, timeout=10) as resposta:
+        conteudo = resposta.read().decode("utf-8")
+        return json.loads(conteudo) if conteudo else None
 
 
-def criar_pedido(itens):
-    return chamar_api("POST", "/pedidos", {"itens": itens})
+def entrar(email, senha):
+    sessao = nova_sessao()
+    chamar(sessao, "POST", f"{USUARIOS}/login", {"email": email, "senha": senha})
+    return sessao
+
+
+def cartao_de_teste(sessao, titular):
+    cartoes = chamar(sessao, "GET", CARTOES)
+    if cartoes:
+        return cartoes[0]["id"]
+
+    cartao = chamar(sessao, "POST", CARTOES, {
+        "numero": CARTAO_DE_TESTE,
+        "nomeTitular": titular,
+        "validadeMes": 12,
+        "validadeAno": date.today().year + 3,
+        "cvv": "123",
+    })
+    return cartao["id"]
+
+
+def criar_pedido(cliente, itens, cartao_id):
+    return chamar(cliente, "POST", f"{API}/pedidos", {"itens": itens, "cartaoId": cartao_id})
 
 
 def saga_terminou(evento):
@@ -73,11 +107,11 @@ def saga_terminou(evento):
         and len(evento.get("historico") or []) > 1
 
 
-def esperar_fim_da_saga(pedido_id):
+def esperar_fim_da_saga(cliente, pedido_id):
     limite = time.monotonic() + TEMPO_LIMITE_SEGUNDOS
 
     while time.monotonic() < limite:
-        evento = chamar_api("GET", f"/eventos?pedidoId={pedido_id}")
+        evento = chamar(cliente, "GET", f"{API}/eventos?pedidoId={pedido_id}")
         if saga_terminou(evento):
             return evento
         print(".", end="", flush=True)
@@ -118,16 +152,17 @@ def mostrar_links_do_mongo(evento):
     print(f"    pedido: {MONGO_EXPRESS}/pedido/%22{evento['pedidoId']}%22")
 
 
-def rodar_cenario(nome):
+def rodar_cenario(nome, cliente, cartoes):
     cenario = CENARIOS[nome]
     print(f"\n=== {cenario['titulo']} ===")
     print(f"  {cenario['explicacao']}")
 
-    pedido = criar_pedido(cenario["itens"])
+    cartao_id = cartoes["admin"] if cenario.get("cartao_do_admin") else cartoes["cliente"]
+    pedido = criar_pedido(cliente, cenario["itens"], cartao_id)
     print(f"  Pedido criado: {pedido['id']}  (transação {pedido['transacaoId']})")
     print("  Aguardando a saga terminar", end="", flush=True)
 
-    evento = esperar_fim_da_saga(pedido["id"])
+    evento = esperar_fim_da_saga(cliente, pedido["id"])
     if evento is None:
         print(f"\n  A saga não terminou em {TEMPO_LIMITE_SEGUNDOS}s. Veja os logs com: docker compose logs -f")
         return False
@@ -203,14 +238,23 @@ def main():
     escolhidos = parser.parse_args().cenarios or opcoes
 
     try:
-        chamar_api("GET", "/eventos/todos")
+        cliente = entrar(*CLIENTE)
+        admin = entrar(*ADMIN)
+        cartoes = {
+            "cliente": cartao_de_teste(cliente, "CLIENTE DEMONSTRACAO"),
+            "admin": cartao_de_teste(admin, "ADMIN LIVRARIA"),
+        }
+    except urllib.error.HTTPError as erro:
+        print(f"Falha ao preparar o login e os cartões: {erro.code} em {erro.url}")
+        return 1
     except OSError:
-        print("O pedido-service não respondeu em http://localhost:3000. Suba o projeto com: py build.py")
+        print("O usuario-service ou o pagamento-service não respondeu. Suba o projeto com: py build.py")
         return 1
 
-    print("Cada compra aprovada baixa o estoque de verdade. Para voltar ao estoque inicial, rode py build.py de novo.")
+    print("Cada compra aprovada baixa o estoque de verdade. Para voltar ao estoque inicial, rode py build.py --recriar.")
 
-    resultados = [rodar_cenario_dlt() if nome == "dlt" else rodar_cenario(nome) for nome in escolhidos]
+    resultados = [rodar_cenario_dlt() if nome == "dlt" else rodar_cenario(nome, cliente, cartoes)
+                  for nome in escolhidos]
     return 0 if all(resultados) else 1
 
 

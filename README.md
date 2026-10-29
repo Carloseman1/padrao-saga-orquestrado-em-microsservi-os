@@ -4,7 +4,7 @@ Projeto de estudo do padrão Saga orquestrado. O domínio é uma livraria: um pe
 
 ## Tecnologias
 
-Java 21, Spring Boot 3.5, Apache Kafka, PostgreSQL 16 com Flyway, MongoDB 7 e Docker. O login usa JWT (jjwt) gravado em cookie e senha com BCrypt. O Redpanda Console sobe junto para ver as mensagens no Kafka. Os testes usam JUnit 5, Mockito e AssertJ.
+Java 21, Spring Boot 3.5, Apache Kafka, PostgreSQL 16 com Flyway, MongoDB 7 e Docker. O login usa JWT (jjwt) gravado em cookie e senha com BCrypt. O Redpanda Console sobe junto para ver as mensagens no Kafka. Os testes usam JUnit 5, Mockito e AssertJ, e os de integração do pagamento e do estoque usam Testcontainers para subir um PostgreSQL e um Kafka de verdade (precisam do Docker rodando).
 
 ## Como rodar
 
@@ -63,18 +63,34 @@ Ele roda cinco cenários: compra aprovada, falha no estoque, falha no pagamento,
 
 O mais fácil é pelo Swagger: http://localhost:3000/swagger-ui.html
 
-Ou pelo curl:
+Ou pelo curl. O pedido exige login e um cartão do usuário, então primeiro entre com o cliente de demonstração, que a migration já cadastra. O cookie da sessão fica no arquivo `sessao.txt`:
 
 ```bash
-curl -X POST http://localhost:3000/api/pedidos \
+curl -c sessao.txt -X POST http://localhost:8093/api/usuarios/login \
   -H "Content-Type: application/json" \
-  -d '{"itens":[{"livro":{"codigo":"DOM_CASMURRO","valorUnitario":39.90},"quantidade":2}]}'
+  -d '{"email":"cliente@livraria.com","senha":"Cliente@123"}'
+```
+
+Depois cadastre um cartão. O número é de um cartão de teste, não de um cartão real:
+
+```bash
+curl -b sessao.txt -X POST http://localhost:8091/api/cartoes \
+  -H "Content-Type: application/json" \
+  -d '{"numero":"4111111111111111","nomeTitular":"CLIENTE DEMONSTRACAO","validadeMes":12,"validadeAno":2029,"cvv":"123"}'
+```
+
+Com o `id` do cartão, faça o pedido. O preço cobrado é o do catálogo, mesmo que o `valorUnitario` enviado seja outro:
+
+```bash
+curl -b sessao.txt -X POST http://localhost:3000/api/pedidos \
+  -H "Content-Type: application/json" \
+  -d '{"cartaoId":<id do cartão>,"itens":[{"livro":{"codigo":"DOM_CASMURRO","valorUnitario":39.90},"quantidade":2}]}'
 ```
 
 Com o `id` que volta na resposta dá pra acompanhar a saga:
 
 ```bash
-curl "http://localhost:3000/api/eventos?pedidoId=<id do pedido>"
+curl -b sessao.txt "http://localhost:3000/api/eventos?pedidoId=<id do pedido>"
 ```
 
 Para ver um rollback acontecer, peça 3 unidades de `O_CORTICO`, que só tem 2 em estoque.
@@ -93,11 +109,12 @@ As mensagens trocadas no Kafka aparecem no Redpanda Console, em http://localhost
 | pagamento-service | 8091 |
 | estoque-service | 8092 |
 | usuario-service | 8093 |
+| fiscal-service | 8094 |
 | Redpanda Console | 8081 |
 | mongo-express (tela do MongoDB) | 8082 |
 | Kafka | 9092 |
 | MongoDB | 27017 |
-| PostgreSQL (validação, pagamento, estoque, usuário) | 5432, 5433, 5434, 5435 |
+| PostgreSQL (validação, pagamento, estoque, usuário, fiscal) | 5432, 5433, 5434, 5435, 5436 |
 
 Usuário e senha dos bancos estão no `docker-compose.yml`. São só de desenvolvimento.
 
@@ -156,6 +173,8 @@ Cada serviço tem o próprio banco e nenhum acessa o banco do outro. Tudo o que 
 
 O usuario-service fica fora da saga. Ele cuida do cadastro, do login e da recuperação de senha, e consulta o ViaCEP para preencher o endereço no cadastro. No login ele grava o JWT num cookie, e a ideia é que os outros serviços validem esse token por conta própria, sem chamar o usuario-service.
 
+O fiscal-service emite e cancela a NF-e do pedido. Ele conversa com uma SEFAZ simulada, atrás da interface `Sefaz`: emitir de verdade exige certificado digital, CNPJ e credenciamento na SEFAZ, o que não faz sentido num projeto de estudo. A simulação gera a chave de acesso de 44 dígitos com o dígito verificador, rejeita com o código 778 os livros configurados como NCM inválido (por padrão, `O_GUARANI`) e registra o cancelamento com o evento 110111. Ele já recebe os comandos `nfe-sucesso` e `nfe-falha`, mas o orquestrador ainda não manda o pedido para essa etapa.
+
 ## Síncrono e assíncrono
 
 A regra que segui: **o usuário fala com os serviços de forma síncrona (HTTP), e os serviços falam entre si de forma assíncrona (Kafka)**. A única chamada síncrona entre sistemas é a consulta de CEP no ViaCEP.
@@ -166,14 +185,14 @@ A regra que segui: **o usuário fala com os serviços de forma síncrona (HTTP),
 | Consultar o pedido | pedido-service | HTTP | Status e histórico de cada etapa |
 | Cadastrar livro no catálogo | validacao-livro-service | HTTP, e o estoque é avisado pelo Kafka (`livro-cadastrado`) | O livro cadastrado |
 | Registrar entrada de estoque | estoque-service | HTTP | O estoque atualizado |
-| Consultar CEP, cadastrar-se, login e logout | usuario-service *(em construção)* | HTTP, e o CEP é consultado no ViaCEP também por HTTP | Endereço, usuário ou cookie de sessão |
-| Cadastrar e listar cartões | pagamento-service *(planejado)* | HTTP | O cartão mascarado |
+| Consultar CEP, cadastrar-se, login e logout | usuario-service | HTTP, e o CEP é consultado no ViaCEP também por HTTP | Endereço, usuário ou cookie de sessão |
+| Cadastrar e listar cartões | pagamento-service | HTTP | O cartão mascarado |
 
 **Por que a saga é assíncrona.** Se o pedido-service chamasse validação, pagamento e estoque por HTTP, o usuário esperaria os três e qualquer um fora do ar derrubaria a compra. Pelo Kafka, se o estoque cair, a mensagem espera na fila e é processada quando ele voltar. O custo é que o resultado não volta na resposta do `POST`: o cliente consulta depois no `GET /api/eventos`.
 
-**Login sem chamada a cada requisição** *(em construção)*. O usuario-service gera o JWT e o grava num cookie `HttpOnly` com `SameSite=Strict`. O navegador envia o cookie sozinho, e cada serviço confere a assinatura do token com o mesmo segredo, sem perguntar nada ao usuario-service. Se ele cair, quem já está logado continua comprando, só o login para. A contrapartida é que o logout só invalida o token no próprio usuario-service; nos outros ele vale até expirar, que hoje é 1 hora.
+**Login sem chamada a cada requisição**. O usuario-service gera o JWT e o grava num cookie `HttpOnly` com `SameSite=Strict`. O navegador envia o cookie sozinho, e cada serviço confere a assinatura do token com o mesmo segredo, sem perguntar nada ao usuario-service. Se ele cair, quem já está logado continua comprando, só o login para. A contrapartida é que o logout só invalida o token no próprio usuario-service; nos outros ele vale até expirar, que hoje é 1 hora.
 
-**Cartão em dois momentos** *(planejado)*. O cadastro é síncrono: o pagamento-service valida, criptografa e responde na hora. O uso é assíncrono: o pedido leva só o `cartaoId`, o `usuarioId` vem do token, e é na etapa de pagamento da saga que o pagamento-service confere se o cartão existe, é daquele usuário e não está vencido. Se não estiver, responde `ROLLBACK_PENDENTE` e a saga se desfaz como em qualquer outra falha. Não validei o cartão no momento do pedido porque isso obrigaria o pedido-service a chamar o pagamento por HTTP, e com o pagamento fora do ar ninguém conseguiria nem registrar o pedido. O número do cartão nunca passa pelo Kafka.
+**Cartão em dois momentos**. O cadastro é síncrono: o pagamento-service valida, criptografa e responde na hora. O uso é assíncrono: o pedido leva só o `cartaoId`, o `usuarioId` vem do token, e é na etapa de pagamento da saga que o pagamento-service confere se o cartão existe, é daquele usuário e não está vencido. Se não estiver, responde `ROLLBACK_PENDENTE` e a saga se desfaz como em qualquer outra falha. Não validei o cartão no momento do pedido porque isso obrigaria o pedido-service a chamar o pagamento por HTTP, e com o pagamento fora do ar ninguém conseguiria nem registrar o pedido. O número do cartão nunca passa pelo Kafka.
 
 ## Como a saga funciona
 
@@ -275,7 +294,7 @@ erDiagram
     }
     VALIDACAO {
         bigint id PK
-        varchar pedido_id "vem do evento"
+        varchar pedido_id "vem do evento, único junto com transacao_id"
         varchar transacao_id "vem do evento"
         boolean sucesso
         timestamp criado_em
@@ -289,11 +308,11 @@ erDiagram
 erDiagram
     PAGAMENTO {
         bigint id PK
-        varchar pedido_id "vem do evento"
+        varchar pedido_id "vem do evento, único junto com transacao_id"
         varchar transacao_id "vem do evento"
         integer quantidade_total
         numeric valor_total "NUMERIC(10,2)"
-        varchar status "PENDENTE, APROVADO ou ESTORNADO"
+        varchar status "APROVADO, RECUSADO ou ESTORNADO"
         timestamp criado_em
         timestamp atualizado_em
     }
@@ -308,6 +327,7 @@ erDiagram
         bigint id PK
         varchar codigo_livro UK "mesmo código do catálogo"
         integer disponivel
+        bigint versao "controle de concorrência (@Version)"
     }
     MOVIMENTACAO_ESTOQUE {
         bigint id PK
@@ -319,6 +339,13 @@ erDiagram
         integer quantidade_nova
         timestamp criado_em
         timestamp estornado_em "preenchido no rollback"
+    }
+    BAIXA_ESTOQUE {
+        bigint id PK
+        varchar pedido_id "vem do evento, único junto com transacao_id"
+        varchar transacao_id "vem do evento"
+        boolean sucesso "false quando a baixa foi recusada"
+        timestamp criado_em
     }
 ```
 
@@ -367,7 +394,11 @@ O evento tem versão (`"versao": 1`) e cada serviço recusa a versão que não c
 
 Falha de negócio e falha técnica seguem caminhos diferentes. Estoque insuficiente ou valor abaixo do mínimo viram `ROLLBACK_PENDENTE` e a saga se desfaz. Já uma mensagem que o serviço não consegue processar (JSON quebrado, versão desconhecida, banco fora do ar) é tentada de novo duas vezes e, se continuar falhando, vai para um tópico `.DLT`, por exemplo `estoque-sucesso.DLT`. JSON quebrado e versão desconhecida vão direto, porque tentar de novo não resolve.
 
-Como o Kafka pode entregar a mesma mensagem mais de uma vez, cada serviço confere se já processou aquele `pedidoId` + `transacaoId` antes de executar a etapa. Assim não cobra nem baixa estoque duas vezes.
+Como o Kafka pode entregar a mesma mensagem mais de uma vez, cada serviço confere se já processou aquele `pedidoId` + `transacaoId` antes de executar a etapa. Se já processou, ignora a mensagem e não responde nada, porque a primeira entrega já respondeu ao orquestrador. Na primeira versão a duplicata virava `ROLLBACK_PENDENTE`, e a saga estornava um pagamento que tinha dado certo. A conferência sozinha não cobre duas cópias processadas ao mesmo tempo, então o pagamento e a validação também têm `UNIQUE (pedido_id, transacao_id)` no banco, e a recusa do banco é tratada como duplicata. Duplicata não vai para a DLT, porque é comportamento normal do Kafka.
+
+Nenhum serviço grava no banco e publica no Kafka como duas operações separadas. Quem grava algo registra a mensagem numa tabela `outbox` na mesma transação, e um relay agendado (`RelayOutbox`) publica em ordem, com o `pedidoId` como chave de partição, e só marca a linha como enviada depois que o Kafka confirma. Se o serviço cair entre gravar e publicar, a mensagem continua na outbox e sai no próximo ciclo. No pedido-service a outbox é uma coleção do MongoDB, e por isso o Mongo sobe como replica set no compose: transação no MongoDB só existe em replica set. O orquestrador não tem banco, então ele espera a confirmação do Kafka antes de terminar de processar a mensagem; se o envio falhar, a mensagem recebida é tentada de novo. A etapa que falha também deixa registro: o pagamento recusado fica gravado como `RECUSADO`, e a baixa recusada fica na tabela `baixa_estoque` com `sucesso = false`. Sem isso, uma cópia atrasada da mensagem, chegando depois de a saga ter sido desfeita, executaria a etapa de novo, por exemplo baixando o estoque depois de uma reposição.
+
+A baixa do estoque roda numa transação só para todos os itens do pedido. Se o segundo livro não tiver estoque, o primeiro também não é baixado. O `Estoque` tem `@Version`, porque a saga e o `POST /api/estoques/entradas` podem alterar o mesmo livro ao mesmo tempo, e sem versão uma das alterações se perdia. Quando duas alterações se cruzam, a segunda é recusada: na saga, a mensagem volta para o Kafka e é tentada de novo; no HTTP, a resposta é `409 ESTOQUE_ALTERADO`. O pagamento não precisou de transação, porque passou a ser gravado uma vez só, já aprovado.
 
 As regras ficam nas entidades: `Pagamento.aprovar()` recusa valor abaixo do mínimo, `Estoque.baixar()` recusa quantidade maior que a disponível e um `Pedido` não é criado sem itens. Cada regra tem a sua exceção com código e mensagem. No pedido-service ela vira resposta HTTP, e nos outros serviços a mensagem vai para o histórico da saga.
 
@@ -377,9 +408,31 @@ No usuario-service, as respostas não revelam se um e-mail tem conta, com uma ex
 
 Enquanto digitava o `ControleDeTentativas`, percebi um caso que a regra de bloqueio do login não cobre. Depois de 5 senhas erradas o e-mail fica bloqueado por 60 segundos, mas quando o bloqueio vence a contagem recomeça do zero. Um robô paciente consegue 5 tentativas por minuto, sem fim: 7.200 por dia para cada e-mail. Também não resolvi trocando por um bloqueio longo, de um dia por exemplo, porque aí qualquer pessoa conseguiria travar a conta de outra só errando a senha de propósito. A saída que escolhi é o bloqueio progressivo: a espera dobra a cada novo bloqueio (1, 2, 4, 8 minutos...) até um teto de 24 horas, e um login certo zera tudo. Quem erra a senha algumas vezes quase não percebe, e o robô, ao chegar no teto, fica com 5 tentativas por dia em vez de 7.200. Para isso o `ControleDeTentativas` passou a guardar também quantas vezes o e-mail já foi bloqueado. Ainda falta o limite por IP, que fecha o ataque de testar a mesma senha em muitos e-mails diferentes.
 
+## Desafios que me travaram
+
+Algumas partes deste projeto levaram bem mais tempo do que eu esperava. Deixo aqui o que travou, por que travou e como saí, porque foi onde mais aprendi.
+
+**O rollback do estoque apagava a venda de outro cliente.** A primeira versão do rollback voltava o estoque para a quantidade de antes da baixa. Com um pedido só, funcionava. Com dois pedidos se cruzando (A compra, B compra, A falha), o rollback de A apagava a venda de B. Demorei a ver porque meus testes só tinham um pedido. A correção foi devolver apenas o que aquele pedido baixou e marcar a movimentação como estornada, o que também evita devolver duas vezes se a mensagem de rollback chegar repetida.
+
+**A proteção contra mensagem duplicada cancelava pedidos aprovados.** Cada serviço conferia se já tinha processado o pedido, mas a exception de duplicata caía no mesmo `catch` das falhas de negócio e virava `ROLLBACK_PENDENTE`. A segunda entrega da mensagem desfazia a primeira. O que mais me travou foi que o teste confirmava esse comportamento: ele estava fiel ao código, e o código estava errado para o negócio. Resolvi com um `catch` próprio para a duplicata, que só registra um aviso e não responde nada; com a conferência antes de qualquer outra regra; e com `UNIQUE (pedido_id, transacao_id)` no banco para o caso de duas cópias chegarem ao mesmo tempo. Também decidi não mandar duplicata para a DLT, porque ela é comportamento normal do Kafka.
+
+**O `@Transactional` não desfazia nada.** Quando fui deixar a baixa de estoque atômica, coloquei `@Transactional` no método da etapa, e uma baixa pela metade continuava gravada. O motivo é que o método tem um `try/catch` que captura a exception antes de ela chegar à transação, então o Spring faz commit do que deu certo. A saída foi envolver só a parte que grava com um `TransactionTemplate`. Um segundo detalhe veio junto: a `DataIntegrityViolationException` do `UNIQUE` precisa ser capturada fora da transação, porque dentro dela o Spring já marcou tudo para desfazer e o commit falharia.
+
+**Duas alterações no mesmo livro se perdiam.** A saga baixa o estoque pelo Kafka e o operador repõe pelo HTTP, e os dois leem, alteram e gravam o mesmo registro. Adicionei `@Version` no `Estoque`. A decisão difícil foi o que fazer no conflito: ele não é falta de estoque, então não pode desfazer a saga. Na saga, a exception sobe de propósito para o Kafka tentar a mensagem de novo; no HTTP, a resposta é `409 ESTOQUE_ALTERADO`.
+
+**Uma correção minha criou outro bug.** Com a baixa atômica, uma baixa recusada não gravava nada, e com isso sumia a prova de que a mensagem tinha sido processada. Uma cópia atrasada, chegando depois de uma reposição, baixava o estoque de um pedido já cancelado. O pagamento tinha o mesmo problema com cartão recusado. Passei a gravar também a tentativa que falha: o pagamento ganhou o status `RECUSADO`, e o estoque ganhou a tabela `baixa_estoque`. Foi aí que entendi que cada correção muda as suposições das outras.
+
+**Gravar e publicar não eram atômicos.** Se um serviço caísse entre gravar no banco e publicar no Kafka, a saga parava sem ninguém saber, e a nova entrega da mensagem seria ignorada como duplicata. Resolvi com o Transactional Outbox: a resposta é gravada numa tabela `outbox` na mesma transação do dado, e um relay publica depois. O relay publica em ordem e para na primeira falha, para não embaralhar as mensagens do mesmo pedido.
+
+**Transação no MongoDB.** O pedido-service usa MongoDB, e o outbox dele não funcionava: transação no Mongo só existe em replica set. Com usuário e senha ligados, o replica set ainda exige um arquivo de chave. No compose, o container gera a chave ao subir, e o healthcheck inicia o replica set e só fica saudável quando o nó já é primário. Sem essa espera, o pedido-service podia subir antes da eleição e falhar na primeira transação. As conexões usam `directConnection=true`, para que rodar o serviço pela IDE continue funcionando.
+
+**O CI estava verde com serviços que não subiam.** O filtro de autenticação lia `app.sessao-cookie-nome`, mas o `application.properties` definia `app.sessao.cookie-nome`. Por causa de um ponto no lugar de um hífen, o pedido-service e o pagamento-service não iniciavam. Nenhum teste unitário inicia a aplicação, então ninguém percebeu. Quem achou foi o primeiro teste de integração com Testcontainers, e desde então o pedido, o pagamento e o estoque têm testes que sobem PostgreSQL, MongoDB e Kafka de verdade.
+
+**O preço vinha do cliente.** Percebi pelo meu próprio `demo.py`, que mandava um livro a R$ 0,05 para simular falha no pagamento. Funcionava bem demais: qualquer um podia escolher o preço. A etapa de validação, que já consultava o catálogo, passou a trocar o preço de cada item pelo cadastrado.
+
 ## Estrutura
 
-Cada serviço é organizado por domínio, no mesmo padrão do `card-service`. Exemplo do pagamento:
+Cada serviço é organizado por domínio, no mesmo padrão do meu projeto de cadastro de cartões. Exemplo do pagamento:
 
 ```
 pagamento-service/src/main/java/com/livraria/pagamento/
@@ -388,7 +441,7 @@ pagamento-service/src/main/java/com/livraria/pagamento/
 └── shared/       configurações e tratamento de erros
 ```
 
-O usuario-service segue o mesmo padrão, com os pacotes trazidos do card-service:
+O usuario-service segue o mesmo padrão, com os pacotes trazidos do projeto de cartões:
 
 ```
 usuario-service/src/main/java/com/livraria/usuario/
@@ -473,11 +526,13 @@ No usuario-service, `JWT_SECRET` é o segredo que assina os tokens (pelo menos 3
 
 ## O que ainda falta
 
-- Gravar no banco e publicar no Kafka não é atômico. Se o serviço cair entre as duas coisas, o pedido fica sem saga. O padrão Outbox resolveria isso.
+- O relay da outbox lê as linhas pendentes sem travar nenhuma. Com uma instância por serviço, como no compose, está certo; com duas, as duas publicariam a mesma linha. A idempotência segura o efeito, mas a ordem pode embaralhar. A correção seria ler com `SELECT ... FOR UPDATE SKIP LOCKED`.
+- As linhas enviadas da outbox nunca são apagadas. Falta uma limpeza agendada.
+- O relay da outbox consulta a tabela a cada 500 ms, então cada etapa da saga ganha até meio segundo de espera. Num ambiente com mais volume, o caminho seria ler o log do banco com CDC (Debezium) em vez de consultar a tabela.
 - O pedido-service só grava o evento no início e no fim, então enquanto a saga roda o `GET /api/eventos` não mostra as etapas já concluídas.
-- Se uma mensagem repetida chegar, a checagem de duplicidade protege o dado, mas responde com rollback e desfaz uma etapa que tinha dado certo. O ideal seria devolver o mesmo resultado da primeira vez.
-- Num pedido com vários livros, a baixa de estoque não roda numa transação só.
-- Ainda não tem teste de integração com Kafka e bancos reais (Testcontainers).
+- Se o estorno do pagamento ou a devolução do estoque falharem por um erro de negócio, o serviço responde `FALHA` e a saga continua voltando como se a compensação tivesse dado certo.
+- Não existe prazo para uma saga parada: se um serviço nunca responder, ninguém percebe.
+- Os testes de integração cobrem o pagamento e o estoque; a validação e o orquestrador ainda só têm testes unitários.
 - As mensagens que vão para a DLT ficam guardadas, mas ainda não tem como reenviar depois de corrigir o problema.
 - Observabilidade (logs centralizados e rastreio da saga entre os serviços) fica para uma próxima versão, provavelmente com Elastic.
 - O cadastro de usuário ainda não limita tentativas por IP, então um robô consegue testar quais e-mails têm conta. A correção completa é confirmar o cadastro por e-mail, que depende de o projeto passar a enviar e-mails.
