@@ -2,6 +2,7 @@ package com.livraria.estoque.shared.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -40,6 +41,13 @@ public class DefaultExceptionHandler {
     public ResponseEntity<ErrorDTO> handleParametroInvalido(MethodArgumentTypeMismatchException ex) {
         return resposta(new ErrorDTO(
                 "PARAMETRO_INVALIDO", "Identificador inválido.", HttpStatus.BAD_REQUEST));
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorDTO> handleEstoqueAlterado(OptimisticLockingFailureException ex) {
+        return resposta(new ErrorDTO(
+                "ESTOQUE_ALTERADO", "O estoque foi alterado por outra operação. Tente novamente.",
+                HttpStatus.CONFLICT));
     }
 
     @ExceptionHandler(Exception.class)

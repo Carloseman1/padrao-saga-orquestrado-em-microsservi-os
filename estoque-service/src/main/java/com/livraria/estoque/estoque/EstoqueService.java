@@ -6,8 +6,11 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.livraria.estoque.estoque.dto.EntradaEstoqueRequest;
 import com.livraria.estoque.estoque.dto.EstoqueDTO;
@@ -28,14 +31,19 @@ public class EstoqueService {
 
     private final EstoqueRepository estoqueRepository;
     private final MovimentacaoEstoqueRepository movimentacaoRepository;
+    private final BaixaEstoqueRepository baixaRepository;
     private final OrquestradorProducer orquestradorProducer;
+    private final TransactionTemplate transacao;
     private final Clock clock;
 
     public EstoqueService(EstoqueRepository estoqueRepository, MovimentacaoEstoqueRepository movimentacaoRepository,
-                          OrquestradorProducer orquestradorProducer, Clock clock) {
+                          BaixaEstoqueRepository baixaRepository, OrquestradorProducer orquestradorProducer,
+                          TransactionTemplate transacao, Clock clock) {
         this.estoqueRepository = estoqueRepository;
         this.movimentacaoRepository = movimentacaoRepository;
+        this.baixaRepository = baixaRepository;
         this.orquestradorProducer = orquestradorProducer;
+        this.transacao = transacao;
         this.clock = clock;
     }
 
@@ -72,34 +80,59 @@ public class EstoqueService {
         try {
             String pedidoId = evento.getPedido().getId();
 
-            if (movimentacaoRepository.existsByPedidoIdAndTransacaoId(pedidoId, evento.getTransacaoId())) {
+            if (baixaRepository.existsByPedidoIdAndTransacaoId(pedidoId, evento.getTransacaoId())) {
                 throw new MovimentacaoDuplicadaException();
             }
 
-            evento.getPedido().getItens().forEach(item -> baixarItem(item, pedidoId, evento.getTransacaoId()));
-            evento.registrar(ORIGEM, StatusSaga.SUCESSO, "Estoque atualizado com sucesso.", agora());
+            transacao.executeWithoutResult(status -> {
+                salvarBaixa(new BaixaEstoque(pedidoId, evento.getTransacaoId(), true, agora()));
+                evento.getPedido().getItens().forEach(item -> baixarItem(item, pedidoId, evento.getTransacaoId()));
+                evento.registrar(ORIGEM, StatusSaga.SUCESSO, "Estoque atualizado com sucesso.", agora());
+                orquestradorProducer.enviar(evento);
+            });
+        } catch (MovimentacaoDuplicadaException ex) {
+            log.warn("Mensagem duplicada ignorada: o estoque do pedido {} na transação {} já foi baixado",
+                    evento.getPedido().getId(), evento.getTransacaoId());
+        } catch (OptimisticLockingFailureException ex) {
+            throw ex;
         } catch (RuntimeException ex) {
             log.error("Erro ao atualizar o estoque", ex);
             evento.registrar(ORIGEM, StatusSaga.ROLLBACK_PENDENTE,
                     "Falha ao atualizar o estoque: " + motivo(ex), agora());
+            transacao.executeWithoutResult(status -> {
+                salvarBaixa(new BaixaEstoque(evento.getPedido().getId(), evento.getTransacaoId(), false, agora()));
+                orquestradorProducer.enviar(evento);
+            });
         }
-        orquestradorProducer.enviar(evento);
     }
 
     public void desfazer(Evento evento) {
         try {
-            movimentacaoRepository
-                    .findByPedidoIdAndTransacaoId(evento.getPedido().getId(), evento.getTransacaoId())
-                    .stream()
-                    .filter(movimentacao -> !movimentacao.isEstornada())
-                    .forEach(this::devolver);
-            evento.registrar(ORIGEM, StatusSaga.FALHA, "Rollback executado no estoque.", agora());
+            transacao.executeWithoutResult(status -> {
+                movimentacaoRepository
+                        .findByPedidoIdAndTransacaoId(evento.getPedido().getId(), evento.getTransacaoId())
+                        .stream()
+                        .filter(movimentacao -> !movimentacao.isEstornada())
+                        .forEach(this::devolver);
+                evento.registrar(ORIGEM, StatusSaga.FALHA, "Rollback executado no estoque.", agora());
+                orquestradorProducer.enviar(evento);
+            });
+        } catch (OptimisticLockingFailureException ex) {
+            throw ex;
         } catch (RuntimeException ex) {
             log.error("Erro ao desfazer a baixa no estoque", ex);
             evento.registrar(ORIGEM, StatusSaga.FALHA,
                     "Rollback do estoque não executado: " + motivo(ex), agora());
+            orquestradorProducer.enviar(evento);
         }
-        orquestradorProducer.enviar(evento);
+    }
+
+    private void salvarBaixa(BaixaEstoque baixa) {
+        try {
+            baixaRepository.save(baixa);
+        } catch (DataIntegrityViolationException ex) {
+            throw new MovimentacaoDuplicadaException();
+        }
     }
 
     private void baixarItem(ItemPedido item, String pedidoId, String transacaoId) {
@@ -115,14 +148,14 @@ public class EstoqueService {
     }
 
     private void devolver(MovimentacaoEstoque movimentacao) {
-      Estoque estoque = movimentacao.getEstoque();
-      estoque.repor(movimentacao.getQuantidadePedida());
-      movimentacao.estornar(agora());
-      estoqueRepository.save(estoque);
-      movimentacaoRepository.save(movimentacao);
-      log.info("Devolvidas {} unidades do livro {}, estoque agora com {}",
-              movimentacao.getQuantidadePedida(), estoque.getCodigoLivro(),
-              estoque.getDisponivel());
+        Estoque estoque = movimentacao.getEstoque();
+        estoque.repor(movimentacao.getQuantidadePedida());
+        movimentacao.estornar(agora());
+        estoqueRepository.save(estoque);
+        movimentacaoRepository.save(movimentacao);
+        log.info("Devolvidas {} unidades do livro {}, estoque agora com {}",
+                movimentacao.getQuantidadePedida(), estoque.getCodigoLivro(),
+                estoque.getDisponivel());
     }
 
     private String motivo(RuntimeException ex) {

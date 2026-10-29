@@ -1,7 +1,10 @@
 package com.livraria.estoque.estoque;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -20,6 +23,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.livraria.estoque.estoque.dto.EntradaEstoqueRequest;
 import com.livraria.estoque.estoque.dto.EstoqueDTO;
@@ -46,14 +52,19 @@ class EstoqueServiceTest {
     private MovimentacaoEstoqueRepository movimentacaoRepository;
 
     @Mock
+    private BaixaEstoqueRepository baixaRepository;
+
+    @Mock
     private OrquestradorProducer orquestradorProducer;
 
     private EstoqueService estoqueService;
 
     @BeforeEach
     void criarService() {
+        TransactionTemplate transacao = new TransactionTemplate(mock(PlatformTransactionManager.class));
         estoqueService = new EstoqueService(
-                estoqueRepository, movimentacaoRepository, orquestradorProducer, OUTUBRO_DE_2026);
+                estoqueRepository, movimentacaoRepository, baixaRepository, orquestradorProducer, transacao,
+                OUTUBRO_DE_2026);
     }
 
     @Test
@@ -105,6 +116,7 @@ class EstoqueServiceTest {
         verify(movimentacaoRepository).save(capturada.capture());
         assertThat(capturada.getValue().getQuantidadeAnterior()).isEqualTo(4);
         assertThat(capturada.getValue().getQuantidadeNova()).isEqualTo(1);
+        assertThat(baixaGravada().isSucesso()).isTrue();
         verify(orquestradorProducer).enviar(evento);
     }
 
@@ -121,6 +133,7 @@ class EstoqueServiceTest {
         assertThat(ultimaMensagem(evento))
                 .isEqualTo("Falha ao atualizar o estoque: Estoque insuficiente para o livro.");
         verify(movimentacaoRepository, never()).save(any());
+        assertThat(baixaGravada().isSucesso()).isFalse();
     }
 
     @Test
@@ -134,14 +147,46 @@ class EstoqueServiceTest {
     }
 
     @Test
-    void pede_rollback_quando_transacao_ja_movimentou_o_estoque() {
-        when(movimentacaoRepository.existsByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(true);
+    void ignora_mensagem_duplicada_sem_responder_ao_orquestrador() {
+        when(baixaRepository.existsByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(true);
         Evento evento = evento(item("DOM_CASMURRO", 1));
 
         estoqueService.baixar(evento);
 
-        assertThat(evento.getStatus()).isEqualTo(StatusSaga.ROLLBACK_PENDENTE);
+        assertThat(evento.getStatus()).isNull();
         verify(estoqueRepository, never()).save(any());
+        verify(orquestradorProducer, never()).enviar(any());
+    }
+
+    @Test
+    void conflito_de_versao_na_baixa_volta_para_o_kafka_tentar_de_novo() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 4);
+        when(estoqueRepository.findByCodigoLivro("DOM_CASMURRO")).thenReturn(Optional.of(estoque));
+        when(estoqueRepository.save(estoque))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Estoque.class, 1L));
+        Evento evento = evento(item("DOM_CASMURRO", 1));
+
+        assertThatThrownBy(() -> estoqueService.baixar(evento))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+
+        assertThat(evento.getStatus()).isNull();
+        verify(orquestradorProducer, never()).enviar(any());
+    }
+
+    @Test
+    void conflito_de_versao_no_rollback_volta_para_o_kafka_tentar_de_novo() {
+        Estoque estoque = new Estoque("DOM_CASMURRO", 2);
+        MovimentacaoEstoque movimentacao = baixaDoPedido(estoque, 1);
+        when(movimentacaoRepository.findByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO))
+                .thenReturn(List.of(movimentacao));
+        when(estoqueRepository.save(estoque))
+                .thenThrow(new ObjectOptimisticLockingFailureException(Estoque.class, 1L));
+        Evento evento = evento(item("DOM_CASMURRO", 1));
+
+        assertThatThrownBy(() -> estoqueService.desfazer(evento))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+
+        verify(orquestradorProducer, never()).enviar(any());
     }
 
     @Test
@@ -190,9 +235,15 @@ class EstoqueServiceTest {
         assertThat(estoque.getDisponivel()).isEqualTo(2);
     }
 
-    private MovimentacaoEstoque baixaDoPedido(Estoque estoque, int quantidade){
+    private BaixaEstoque baixaGravada() {
+        ArgumentCaptor<BaixaEstoque> gravada = ArgumentCaptor.forClass(BaixaEstoque.class);
+        verify(baixaRepository, atLeastOnce()).save(gravada.capture());
+        return gravada.getValue();
+    }
+
+    private MovimentacaoEstoque baixaDoPedido(Estoque estoque, int quantidade) {
         MovimentacaoEstoque movimentacao =
-                new MovimentacaoEstoque(estoque,PEDIDO, TRANSACAO, quantidade,
+                new MovimentacaoEstoque(estoque, PEDIDO, TRANSACAO, quantidade,
                         LocalDateTime.now(OUTUBRO_DE_2026));
         estoque.baixar(quantidade);
         return movimentacao;
@@ -217,6 +268,4 @@ class EstoqueServiceTest {
         List<Historico> historico = evento.getHistorico();
         return historico.get(historico.size() - 1).mensagem();
     }
-
-
 }
