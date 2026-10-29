@@ -22,6 +22,7 @@ jobs:
           - pagamento-service
           - estoque-service
           - usuario-service
+          - fiscal-service
     defaults:
       run:
         working-directory: ${{ matrix.servico }}

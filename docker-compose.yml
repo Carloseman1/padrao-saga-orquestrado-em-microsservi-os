@@ -9,13 +9,21 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: 123456
+    entrypoint:
+      - bash
+      - -c
+      - |
+        head -c 756 /dev/urandom | base64 > /tmp/chave-replica
+        chmod 400 /tmp/chave-replica
+        chown mongodb:mongodb /tmp/chave-replica
+        exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /tmp/chave-replica --bind_ip_all
     ports:
       - "27017:27017"
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "admin", "-p", "123456", "--quiet", "--eval", "try { quit(rs.status().myState === 1 ? 0 : 1) } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }); quit(1) }"]
       interval: 5s
-      timeout: 3s
-      retries: 12
+      timeout: 5s
+      retries: 24
 
   validacao-livro-db:
     image: postgres:16-alpine
@@ -85,6 +93,23 @@ services:
       timeout: 3s
       retries: 12
 
+  fiscal-db:
+    image: postgres:16-alpine
+    container_name: fiscal-db
+    networks:
+      - livraria-saga
+    environment:
+      POSTGRES_DB: fiscal-db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fiscal-db"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   kafka:
     image: obsidiandynamics/kafka
     container_name: kafka
@@ -134,7 +159,7 @@ services:
     networks:
       - livraria-saga
     environment:
-      ME_CONFIG_MONGODB_URL: mongodb://admin:123456@pedido-db:27017/
+      ME_CONFIG_MONGODB_URL: mongodb://admin:123456@pedido-db:27017/?directConnection=true
       ME_CONFIG_BASICAUTH: "false"
     ports:
       - "8082:8081"
@@ -151,7 +176,7 @@ services:
       - livraria-saga
     environment:
       KAFKA_BROKER: kafka:29092
-      MONGO_DB_URI: mongodb://admin:123456@pedido-db:27017
+      MONGO_DB_URI: mongodb://admin:123456@pedido-db:27017/?directConnection=true
     ports:
       - "3000:3000"
 
@@ -244,6 +269,26 @@ services:
       JWT_SECRET: ${JWT_SECRET:-segredo-de-desenvolvimento-da-livraria-trocar-em-producao}
     ports:
       - "8093:8093"
+
+  fiscal-service:
+    build: ./fiscal-service
+    container_name: fiscal-service
+    depends_on:
+      fiscal-db:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - livraria-saga
+    environment:
+      KAFKA_BROKER: kafka:29092
+      DB_HOST: fiscal-db
+      DB_PORT: 5432
+      DB_NAME: fiscal-db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - "8094:8094"
 
 networks:
   livraria-saga:

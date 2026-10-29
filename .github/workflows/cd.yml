@@ -36,6 +36,7 @@ jobs:
           - pagamento-service
           - estoque-service
           - usuario-service
+          - fiscal-service
     steps:
       - uses: actions/checkout@v5
 
