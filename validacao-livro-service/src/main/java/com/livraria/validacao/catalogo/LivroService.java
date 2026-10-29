@@ -1,9 +1,12 @@
 package com.livraria.validacao.catalogo;
 
+import java.math.BigDecimal;
 import java.util.List;
 
+import com.livraria.validacao.catalogo.exceptions.PrecoInvalidoException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.livraria.validacao.catalogo.dto.LivroDTO;
 import com.livraria.validacao.catalogo.dto.LivroRequest;
@@ -22,6 +25,7 @@ public class LivroService {
         this.livroCadastradoProducer = livroCadastradoProducer;
     }
 
+    @Transactional
     public LivroDTO cadastrar(LivroRequest request) {
         String codigo = obrigatorio(request.codigo(), "código do livro").toUpperCase();
         String titulo = obrigatorio(request.titulo(), "título do livro");
@@ -30,11 +34,15 @@ public class LivroService {
             throw new QuantidadeInicialInvalidaException();
         }
 
+        if (request.preco() == null || request.preco().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new PrecoInvalidoException();
+        }
+
         if (livroRepository.existsByCodigo(codigo)) {
             throw new LivroJaCadastradoException();
         }
 
-        Livro livro = livroRepository.save(new Livro(codigo, titulo));
+        Livro livro = livroRepository.save(new Livro(codigo, titulo, request.preco()));
         livroCadastradoProducer.enviar(new LivroCadastrado(codigo, titulo, request.quantidadeInicial()));
 
         return LivroDTO.de(livro);

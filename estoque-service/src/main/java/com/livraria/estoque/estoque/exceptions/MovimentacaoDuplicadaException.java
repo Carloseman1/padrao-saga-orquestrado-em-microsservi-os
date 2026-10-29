@@ -7,6 +7,6 @@ import org.springframework.http.HttpStatus;
 public class MovimentacaoDuplicadaException extends RuntimeException implements IErroPadrao {
     @Override
     public ErrorDTO toErrorDTO() {
-        return new ErrorDTO("MOVIMENTACAO_DUPLICADA", "Já existe uma movimentação de estoque para esta transação.", HttpStatus.CONFLICT);
+        return new ErrorDTO("MOVIMENTACAO_DUPLICADA", "Já existe uma baixa de estoque para esta transação.", HttpStatus.CONFLICT);
     }
 }

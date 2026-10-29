@@ -34,7 +34,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
 
     public JwtAuthFilter(JwtService jwtService,
-                         @Value("${app.sessao-cookie-nome}") String nomeDoCookie,
+                         @Value("${app.sessao.cookie-nome}") String nomeDoCookie,
                          ObjectMapper objectMapper) {
         this.jwtService = jwtService;
         this.nomeDoCookie = nomeDoCookie;

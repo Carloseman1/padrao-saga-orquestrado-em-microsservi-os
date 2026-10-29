@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.livraria.usuario.seguranca.CookieDeSessao;
+import com.livraria.usuario.seguranca.UsuarioAutenticado;
 import com.livraria.usuario.usuario.dto.LoginRequest;
 import com.livraria.usuario.usuario.dto.LoginResponseDTO;
 
@@ -29,7 +30,7 @@ class UsuarioControllerTest {
         when(usuarioService.login(request))
                 .thenReturn(new LoginResponseDTO(7L, "Usuario Teste", "usuario@teste.com", TOKEN));
         UsuarioController controller = new UsuarioController(
-                usuarioService, new CookieDeSessao("livraria_sessao", false, 3_600_000L));
+                usuarioService, new CookieDeSessao("livraria_sessao", false, 3_600_000L), new UsuarioAutenticado());
 
         ResponseEntity<LoginResponseDTO> resposta = controller.login(request);
 

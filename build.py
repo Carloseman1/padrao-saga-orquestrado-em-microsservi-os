@@ -15,6 +15,7 @@ SERVICOS = [
     "pagamento-service",
     "estoque-service",
     "usuario-service",
+    "fiscal-service",
 ]
 
 PORTAS = {
@@ -26,11 +27,13 @@ PORTAS = {
     8091: "pagamento-service",
     8092: "estoque-service",
     8093: "usuario-service",
+    8094: "fiscal-service",
     9092: "kafka",
     5432: "validacao-livro-db",
     5433: "pagamento-db",
     5434: "estoque-db",
     5435: "usuario-db",
+    5436: "fiscal-db",
     27017: "pedido-db",
 }
 

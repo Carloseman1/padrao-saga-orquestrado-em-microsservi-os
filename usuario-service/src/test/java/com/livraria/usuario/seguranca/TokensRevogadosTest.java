@@ -22,14 +22,14 @@ class TokensRevogadosTest {
 
     @Test
     void token_nao_revogado_continua_valendo() {
-        String token = jwtService.gerarToken(EMAIL, 1L);
+        String token = jwtService.gerarToken(EMAIL, 1L, "CLIENTE");
 
         assertThat(tokensRevogados.revogado(token)).isFalse();
     }
 
     @Test
     void token_revogado_para_de_valer() {
-        String token = jwtService.gerarToken(EMAIL, 1L);
+        String token = jwtService.gerarToken(EMAIL, 1L, "CLIENTE");
 
         tokensRevogados.revogar(token);
 
@@ -38,8 +38,8 @@ class TokensRevogadosTest {
 
     @Test
     void revogar_um_token_nao_derruba_o_outro() {
-        String doUsuario = jwtService.gerarToken(EMAIL, 1L);
-        String daMaria = jwtService.gerarToken("maria@example.com", 2L);
+        String doUsuario = jwtService.gerarToken(EMAIL, 1L, "CLIENTE");
+        String daMaria = jwtService.gerarToken("maria@example.com", 2L, "CLIENTE");
 
         tokensRevogados.revogar(doUsuario);
 
@@ -48,12 +48,12 @@ class TokensRevogadosTest {
 
     @Test
     void token_que_ja_expirou_sai_da_lista() {
-        String token = jwtService.gerarToken(EMAIL, 1L);
+        String token = jwtService.gerarToken(EMAIL, 1L, "CLIENTE");
         tokensRevogados.revogar(token);
 
         Clock depoisDaExpiracao = Clock.offset(relogio, Duration.ofHours(2));
         TokensRevogados maisTarde = new TokensRevogados(jwtService, depoisDaExpiracao);
-        maisTarde.revogar(jwtService.gerarToken("maria@example.com", 2L));
+        maisTarde.revogar(jwtService.gerarToken("maria@example.com", 2L, "CLIENTE"));
 
         assertThat(maisTarde.revogado(token)).isFalse();
     }

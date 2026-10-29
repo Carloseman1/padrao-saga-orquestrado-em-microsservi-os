@@ -1,5 +1,7 @@
 package com.livraria.validacao.catalogo;
 
+import java.math.BigDecimal;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -25,11 +27,15 @@ public class Livro {
     @Column(name = "titulo", nullable = false)
     private String titulo;
 
+    @Column(name = "preco", nullable = false, precision = 10, scale = 2)
+    private BigDecimal preco;
+
     protected Livro() {
     }
 
-    public Livro(String codigo, String titulo) {
+    public Livro(String codigo, String titulo, BigDecimal preco) {
         this.codigo = codigo;
         this.titulo = titulo;
+        this.preco = preco;
     }
 }

@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -28,6 +29,9 @@ public class Estoque {
     @Column(name = "disponivel", nullable = false)
     private int disponivel;
 
+    @Version
+    @Column(name = "versao", nullable = false)
+    private Long versao;
 
     protected Estoque() {
     }

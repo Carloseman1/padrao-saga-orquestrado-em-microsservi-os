@@ -1,4 +1,6 @@
 package com.livraria.validacao.catalogo.dto;
 
-public record LivroRequest(String codigo, String titulo, int quantidadeInicial) {
+import java.math.BigDecimal;
+
+public record LivroRequest(String codigo, String titulo, BigDecimal preco, int quantidadeInicial) {
 }

@@ -27,13 +27,14 @@ public class JwtService {
         this.expirationMs = expirationMs;
     }
 
-    public String gerarToken(String email, Long usuarioId) {
+    public String gerarToken(String email, Long usuarioId, String perfil) {
         Date agora = new Date();
 
         return Jwts.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(email)
                 .claim("usuarioId", usuarioId)
+                .claim("perfil", perfil)
                 .issuedAt(agora)
                 .expiration(new Date(agora.getTime() + expirationMs))
                 .signWith(secretKey)
@@ -63,6 +64,10 @@ public class JwtService {
 
     public Long extrairUsuarioId(String token) {
         return lerClaims(token).get("usuarioId", Long.class);
+    }
+
+    public String extrairPerfil(String token) {
+        return lerClaims(token).get("perfil", String.class);
     }
 
     private Claims lerClaims(String token) {

@@ -72,6 +72,15 @@ public class Pagamento {
         this.atualizadoEm = agora;
     }
 
+    public void recusar(LocalDateTime agora) {
+        this.status = StatusPagamento.RECUSADO;
+        this.atualizadoEm = agora;
+    }
+
+    public boolean foiRecusado() {
+        return status == StatusPagamento.RECUSADO;
+    }
+
     public void estornar(LocalDateTime agora) {
         this.status = StatusPagamento.ESTORNADO;
         this.atualizadoEm = agora;

@@ -1,9 +1,12 @@
 package com.livraria.usuario.seguranca;
 
 
+import com.livraria.usuario.seguranca.exceptions.AcessoNegadoException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.util.List;
 
 @Component
 public class UsuarioAutenticado {
@@ -32,5 +35,15 @@ public class UsuarioAutenticado {
         }
 
         return valor;
+    }
+
+    public String perfil() {
+        return atributo(JwtAuthFilter.ATRIBUTO_PERFIL).toString();
+    }
+
+    public void exigirPerfil(String... permitidos) {
+        if (!List.of(permitidos).contains(perfil())) {
+            throw new AcessoNegadoException();
+        }
     }
 }

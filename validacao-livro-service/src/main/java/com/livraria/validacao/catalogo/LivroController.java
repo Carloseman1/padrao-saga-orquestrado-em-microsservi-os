@@ -2,6 +2,8 @@ package com.livraria.validacao.catalogo;
 
 import java.util.List;
 
+import com.livraria.validacao.seguranca.Perfis;
+import com.livraria.validacao.seguranca.UsuarioAutenticado;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,13 +20,16 @@ import com.livraria.validacao.catalogo.dto.LivroRequest;
 public class LivroController {
 
     private final LivroService livroService;
+    private final UsuarioAutenticado usuarioAutenticado;
 
-    public LivroController(LivroService livroService) {
+    public LivroController(LivroService livroService, UsuarioAutenticado usuarioAutenticado) {
         this.livroService = livroService;
+        this.usuarioAutenticado = usuarioAutenticado;
     }
 
     @PostMapping
     public ResponseEntity<LivroDTO> cadastrar(@RequestBody LivroRequest request) {
+        usuarioAutenticado.exigirPerfil(Perfis.OPERADOR, Perfis.ADMIN);
         LivroDTO cadastrado = livroService.cadastrar(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(cadastrado);
     }

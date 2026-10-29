@@ -3,6 +3,7 @@ package com.livraria.pagamento.pagamento;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -18,8 +19,12 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.livraria.pagamento.cartao.CartaoService;
 import com.livraria.pagamento.cartao.exceptions.CartaoNaoEncontradoException;
@@ -55,7 +60,8 @@ class PagamentoServiceTest {
 
     @BeforeEach
     void criarService() {
-        pagamentoService = new PagamentoService(pagamentoRepository, cartaoService, orquestradorProducer, OUTUBRO_DE_2026);
+        pagamentoService = new PagamentoService(pagamentoRepository, cartaoService, orquestradorProducer,
+                new TransactionTemplate(mock(PlatformTransactionManager.class)), OUTUBRO_DE_2026);
     }
 
     @Test
@@ -85,7 +91,6 @@ class PagamentoServiceTest {
 
     @Test
     void pede_rollback_quando_valor_esta_abaixo_do_minimo() {
-        devolverOPagamentoSalvo();
         Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("0.05")), 1));
 
         pagamentoService.realizar(evento);
@@ -93,18 +98,32 @@ class PagamentoServiceTest {
         assertThat(evento.getStatus()).isEqualTo(StatusSaga.ROLLBACK_PENDENTE);
         assertThat(ultimaMensagem(evento))
                 .isEqualTo("Falha ao realizar o pagamento: O valor mínimo para pagamento é R$ 0,10.");
+        assertThat(statusGravado()).isEqualTo(StatusPagamento.RECUSADO);
         verify(orquestradorProducer).enviar(evento);
     }
 
     @Test
-    void pede_rollback_quando_transacao_ja_foi_paga() {
+    void ignora_mensagem_duplicada_sem_responder_ao_orquestrador() {
         when(pagamentoRepository.existsByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(true);
         Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 1));
 
         pagamentoService.realizar(evento);
 
-        assertThat(evento.getStatus()).isEqualTo(StatusSaga.ROLLBACK_PENDENTE);
+        assertThat(evento.getStatus()).isNull();
+        verify(cartaoService, never()).exigirValidoParaPagamento(any(), any());
         verify(pagamentoRepository, never()).save(any());
+        verify(orquestradorProducer, never()).enviar(any());
+    }
+
+    @Test
+    void ignora_duplicata_recusada_pelo_banco() {
+        when(pagamentoRepository.save(any(Pagamento.class)))
+                .thenThrow(new DataIntegrityViolationException("uk_pagamento_pedido_transacao"));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("30.00")), 1));
+
+        pagamentoService.realizar(evento);
+
+        verify(orquestradorProducer, never()).enviar(any());
     }
 
     @Test
@@ -119,6 +138,22 @@ class PagamentoServiceTest {
         assertThat(evento.getStatus()).isEqualTo(StatusSaga.FALHA);
         assertThat(evento.getPedido().getValorTotal()).isEqualByComparingTo("60.00");
         assertThat(ultimaMensagem(evento)).isEqualTo("Estorno do pagamento realizado.");
+    }
+
+    @Test
+    void nao_estorna_pagamento_que_foi_recusado() {
+        Pagamento recusado = new Pagamento(PEDIDO, TRANSACAO, 1, new BigDecimal("0.05"), LocalDateTime.now(OUTUBRO_DE_2026));
+        recusado.recusar(LocalDateTime.now(OUTUBRO_DE_2026));
+        when(pagamentoRepository.findByPedidoIdAndTransacaoId(PEDIDO, TRANSACAO)).thenReturn(Optional.of(recusado));
+        Evento evento = evento(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("0.05")), 1));
+
+        pagamentoService.estornar(evento);
+
+        assertThat(recusado.getStatus()).isEqualTo(StatusPagamento.RECUSADO);
+        assertThat(evento.getStatus()).isEqualTo(StatusSaga.FALHA);
+        assertThat(ultimaMensagem(evento)).isEqualTo("Pagamento recusado, não há o que estornar.");
+        verify(pagamentoRepository, never()).save(any());
+        verify(orquestradorProducer).enviar(evento);
     }
 
     @Test
@@ -143,7 +178,7 @@ class PagamentoServiceTest {
 
         assertThat(evento.getStatus()).isEqualTo(StatusSaga.ROLLBACK_PENDENTE);
         assertThat(ultimaMensagem(evento)).isEqualTo("Falha ao realizar o pagamento: Cartão não encontrado.");
-        verify(pagamentoRepository, never()).save(any());
+        assertThat(statusGravado()).isEqualTo(StatusPagamento.RECUSADO);
     }
 
     @Test
@@ -155,7 +190,13 @@ class PagamentoServiceTest {
 
         assertThat(evento.getStatus()).isEqualTo(StatusSaga.ROLLBACK_PENDENTE);
         assertThat(ultimaMensagem(evento)).isEqualTo("Falha ao realizar o pagamento: O cartão já está vencido.");
-        verify(pagamentoRepository, never()).save(any());
+        assertThat(statusGravado()).isEqualTo(StatusPagamento.RECUSADO);
+    }
+
+    private StatusPagamento statusGravado() {
+        ArgumentCaptor<Pagamento> gravado = ArgumentCaptor.forClass(Pagamento.class);
+        verify(pagamentoRepository).save(gravado.capture());
+        return gravado.getValue().getStatus();
     }
 
     private void devolverOPagamentoSalvo() {
