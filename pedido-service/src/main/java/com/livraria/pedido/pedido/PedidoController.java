@@ -1,12 +1,10 @@
 package com.livraria.pedido.pedido;
 
+import com.livraria.pedido.pedido.dto.NovaTentativaRequest;
+import com.livraria.pedido.pedido.dto.PedidoResponse;
 import com.livraria.pedido.seguranca.UsuarioAutenticado;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import com.livraria.pedido.pedido.dto.PedidoRequest;
 
@@ -23,8 +21,20 @@ public class PedidoController {
     }
 
     @PostMapping
-    public ResponseEntity<Pedido> criar(@RequestBody PedidoRequest request) {
+    public ResponseEntity<PedidoResponse> criar(@RequestBody PedidoRequest request) {
         Pedido criado = pedidoService.criar(request, usuarioAutenticado.id());
-        return ResponseEntity.status(HttpStatus.CREATED).body(criado);
+        return ResponseEntity.accepted().body(PedidoResponse.de(criado));
+    }
+
+    @GetMapping("/{id}")
+    public PedidoResponse buscar(@PathVariable String id){
+        return PedidoResponse.de(pedidoService.buscar(id, usuarioAutenticado.id()));
+    }
+
+    @PostMapping("/{id}/tentativas")
+    public ResponseEntity<PedidoResponse> tentarDeNovo(@PathVariable String id,
+                                                       @RequestBody NovaTentativaRequest request){
+        Pedido pedido = pedidoService.tentarDeNovo(id, request, usuarioAutenticado.id());
+        return ResponseEntity.accepted().body(PedidoResponse.de(pedido));
     }
 }
