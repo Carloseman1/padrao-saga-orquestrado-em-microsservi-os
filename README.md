@@ -1,6 +1,6 @@
 # Saga orquestrada com microsserviços
 
-Projeto de estudo do padrão Saga orquestrado. O domínio é uma livraria: um pedido passa pela validação dos livros, pelo pagamento e pela baixa de estoque, cada etapa num serviço com seu próprio banco. Como não dá pra ter uma transação única entre bancos diferentes, um orquestrador coordena as etapas pelo Kafka e, se alguma falhar, manda desfazer as que já tinham rodado.
+Projeto de estudo do padrão Saga orquestrado. O domínio é uma livraria: um pedido passa pela validação dos livros, pela baixa de estoque e pelo pagamento, cada etapa num serviço com seu próprio banco. Como não dá pra ter uma transação única entre bancos diferentes, um orquestrador coordena as etapas pelo Kafka e, se alguma falhar, manda desfazer as que já tinham rodado.
 
 ## Tecnologias
 
@@ -48,13 +48,11 @@ Ele roda cinco cenários: compra aprovada, falha no estoque, falha no pagamento,
 
 ```
 === Falha no estoque ===
-  3 x O Cortiço, que só tem 2. Validação e pagamento passam, o estoque recusa e tudo é desfeito.
+  3 x O Cortiço, que só tem 2. A validação passa, o estoque recusa e a validação é desfeita. O pagamento nem é chamado.
     +0.00s  Orquestrador         ok        Saga iniciada.
     +0.04s  Validação de livros  ok        Livros validados com sucesso.
-    +0.09s  Pagamento            ok        Pagamento realizado com sucesso.
     +0.17s  Estoque              falhou    Falha ao atualizar o estoque: Estoque insuficiente para o livro.
     +0.24s  Estoque              desfeito  Rollback executado no estoque.
-    +0.32s  Pagamento            desfeito  Estorno do pagamento realizado.
     +0.60s  Validação de livros  desfeito  Rollback executado na validação dos livros.
     +0.64s  Orquestrador         desfeito  Saga finalizada com erros.
 ```
@@ -181,14 +179,15 @@ A regra que segui: **o usuário fala com os serviços de forma síncrona (HTTP),
 
 | Ação do usuário | Serviço | Como | O que volta na hora |
 |---|---|---|---|
-| Criar pedido | pedido-service | HTTP para registrar, Kafka para processar | `201` com o `id` do pedido, sem o resultado |
-| Consultar o pedido | pedido-service | HTTP | Status e histórico de cada etapa |
+| Criar pedido | pedido-service | HTTP para registrar, Kafka para processar | `202` com o `id` do pedido e o status `PROCESSANDO` |
+| Consultar o pedido | pedido-service | HTTP | Status, motivo da falha e as tentativas de pagamento |
+| Pagar de novo com outro cartão | pedido-service | HTTP para registrar, Kafka para processar | `202` com o pedido de volta em `PROCESSANDO` |
 | Cadastrar livro no catálogo | validacao-livro-service | HTTP, e o estoque é avisado pelo Kafka (`livro-cadastrado`) | O livro cadastrado |
 | Registrar entrada de estoque | estoque-service | HTTP | O estoque atualizado |
 | Consultar CEP, cadastrar-se, login e logout | usuario-service | HTTP, e o CEP é consultado no ViaCEP também por HTTP | Endereço, usuário ou cookie de sessão |
 | Cadastrar e listar cartões | pagamento-service | HTTP | O cartão mascarado |
 
-**Por que a saga é assíncrona.** Se o pedido-service chamasse validação, pagamento e estoque por HTTP, o usuário esperaria os três e qualquer um fora do ar derrubaria a compra. Pelo Kafka, se o estoque cair, a mensagem espera na fila e é processada quando ele voltar. O custo é que o resultado não volta na resposta do `POST`: o cliente consulta depois no `GET /api/eventos`.
+**Por que a saga é assíncrona.** Se o pedido-service chamasse validação, estoque e pagamento por HTTP, o usuário esperaria os três e qualquer um fora do ar derrubaria a compra. Pelo Kafka, se o estoque cair, a mensagem espera na fila e é processada quando ele voltar. O custo é que o resultado não volta na resposta do `POST`: o cliente consulta depois no `GET /api/pedidos/{id}`.
 
 **Login sem chamada a cada requisição**. O usuario-service gera o JWT e o grava num cookie `HttpOnly` com `SameSite=Strict`. O navegador envia o cookie sozinho, e cada serviço confere a assinatura do token com o mesmo segredo, sem perguntar nada ao usuario-service. Se ele cair, quem já está logado continua comprando, só o login para. A contrapartida é que o logout só invalida o token no próprio usuario-service; nos outros ele vale até expirar, que hoje é 1 hora.
 
@@ -196,7 +195,11 @@ A regra que segui: **o usuário fala com os serviços de forma síncrona (HTTP),
 
 ## Como a saga funciona
 
-No caminho feliz a ordem é validação, pagamento e estoque. O `POST` responde antes da saga terminar, então o pedido existe por alguns instantes sem ter sido pago. O resultado aparece depois no `GET /api/eventos`.
+No caminho feliz a ordem é validação, estoque e pagamento. O estoque vem antes do pagamento para ninguém ser cobrado por um livro que acabou; se o pagamento for recusado, a compensação devolve o livro ao estoque. O `POST` responde `202` antes da saga terminar, com o pedido em `PROCESSANDO`. Quando a saga termina, o pedido-service muda o status para `CONCLUIDO`, `PAGAMENTO_RECUSADO` ou `FALHOU`, e o cliente acompanha pelo `GET /api/pedidos/{id}`.
+
+**Status do pedido e status da saga são coisas diferentes.** O status da saga (`SUCESSO`, `ROLLBACK_PENDENTE`, `FALHA`) coordena os serviços e não é mostrado ao cliente. O status do pedido é o que o cliente vê, e só o pedido-service o guarda. Por isso ele não viaja no evento do Kafka.
+
+**Pagar de novo sem refazer o pedido.** Se o cartão for recusado, o cliente escolhe outro cartão e chama `POST /api/pedidos/{id}/tentativas`. O mesmo pedido ganha uma transação nova e uma saga nova, e cada tentativa fica registrada no pedido com o resultado e o motivo. Só um pedido em `PAGAMENTO_RECUSADO` aceita outra tentativa: um pedido sem estoque não se resolve trocando o cartão, e um pedido concluído seria cobrado duas vezes. Quando o fim de uma saga chega, o pedido-service confere se a transação é a da tentativa atual; uma mensagem atrasada de uma tentativa antiga fica registrada no histórico, mas não muda o status. Dois cliques ao mesmo tempo em "pagar" são barrados pelo `@Version` do pedido: o segundo recebe `409 TENTATIVA_EM_ANDAMENTO`.
 
 Cada serviço responde com um status, e o orquestrador decide o próximo passo a partir dele:
 
@@ -204,23 +207,23 @@ Cada serviço responde com um status, e o orquestrador decide o próximo passo a
 - `ROLLBACK_PENDENTE`: a etapa falhou. O orquestrador manda o mesmo serviço desfazer o que fez.
 - `FALHA`: a etapa foi desfeita. O orquestrador volta para a etapa anterior, até chegar ao início.
 
-Exemplo de um pedido com 3 unidades de `O_CORTICO`, que só tem 2 em estoque:
+Exemplo de um pedido pago com um cartão vencido:
 
 ```mermaid
 sequenceDiagram
     participant O as orquestrador
     participant V as validacao-livro
-    participant G as pagamento
     participant E as estoque
+    participant G as pagamento
     participant P as pedido-service
 
-    Note over V,G: validação e pagamento já aprovados
-    O->>E: estoque-sucesso
-    E->>O: ROLLBACK_PENDENTE (estoque insuficiente)
-    O->>E: estoque-falha
-    E->>O: FALHA (estoque restaurado)
+    Note over V,E: validação e baixa de estoque já aprovadas
+    O->>G: pagamento-sucesso
+    G->>O: ROLLBACK_PENDENTE (cartão vencido)
     O->>G: pagamento-falha
-    G->>O: FALHA (pagamento estornado)
+    G->>O: FALHA (pagamento recusado, nada a estornar)
+    O->>E: estoque-falha
+    E->>O: FALHA (livro devolvido ao estoque)
     O->>V: validacao-livro-falha
     V->>O: FALHA (validação desfeita)
     O->>O: fim-falha
@@ -235,15 +238,15 @@ As regras de para onde ir ficam no enum `TransicaoSaga`, no orquestrador:
 |---|---|---|
 | ORQUESTRADOR | SUCESSO | validacao-livro-sucesso |
 | ORQUESTRADOR | FALHA | fim-falha |
-| VALIDACAO_LIVRO_SERVICE | SUCESSO | pagamento-sucesso |
+| VALIDACAO_LIVRO_SERVICE | SUCESSO | estoque-sucesso |
 | VALIDACAO_LIVRO_SERVICE | ROLLBACK_PENDENTE | validacao-livro-falha |
 | VALIDACAO_LIVRO_SERVICE | FALHA | fim-falha |
-| PAGAMENTO_SERVICE | SUCESSO | estoque-sucesso |
-| PAGAMENTO_SERVICE | ROLLBACK_PENDENTE | pagamento-falha |
-| PAGAMENTO_SERVICE | FALHA | validacao-livro-falha |
-| ESTOQUE_SERVICE | SUCESSO | fim-sucesso |
+| ESTOQUE_SERVICE | SUCESSO | pagamento-sucesso |
 | ESTOQUE_SERVICE | ROLLBACK_PENDENTE | estoque-falha |
-| ESTOQUE_SERVICE | FALHA | pagamento-falha |
+| ESTOQUE_SERVICE | FALHA | validacao-livro-falha |
+| PAGAMENTO_SERVICE | SUCESSO | fim-sucesso |
+| PAGAMENTO_SERVICE | ROLLBACK_PENDENTE | pagamento-falha |
+| PAGAMENTO_SERVICE | FALHA | estoque-falha |
 
 No projeto original isso era uma matriz `Object[][]` lida por índice e com cast. Troquei por enum para o compilador conferir os tipos.
 
@@ -463,6 +466,8 @@ Cada serviço tem o próprio Swagger em `http://localhost:<porta>/swagger-ui.htm
 | Método | Endpoint | O que faz |
 |---|---|---|
 | POST | `/api/pedidos` | Cria o pedido e inicia a saga |
+| GET | `/api/pedidos/{id}` | Status do pedido, motivo da falha e tentativas de pagamento |
+| POST | `/api/pedidos/{id}/tentativas` | Paga de novo um pedido com o pagamento recusado, com outro cartão: `{ "cartaoId": 2 }` |
 | GET | `/api/eventos?pedidoId=` | Último evento do pedido |
 | GET | `/api/eventos?transacaoId=` | Último evento da transação |
 | GET | `/api/eventos/todos` | Todos os eventos, do mais recente para o mais antigo |
