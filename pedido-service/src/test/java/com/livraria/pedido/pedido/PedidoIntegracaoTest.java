@@ -1,10 +1,12 @@
 package com.livraria.pedido.pedido;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,11 +21,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.KafkaContainer;
 
+import com.livraria.pedido.pedido.dto.NovaTentativaRequest;
 import com.livraria.pedido.pedido.dto.PedidoRequest;
 import com.livraria.pedido.saga.OutboxRepository;
 
@@ -44,6 +48,32 @@ class PedidoIntegracaoTest {
 
     @Autowired
     private OutboxRepository outboxRepository;
+
+    @Autowired
+    private PedidoRepository pedidoRepository;
+
+    @Test
+    void segunda_tentativa_lida_antes_da_primeira_ser_gravada_e_recusada_pelo_banco() {
+        Pedido pedido = pedidoService.criar(new PedidoRequest(
+                List.of(new ItemPedido(new Livro("DOM_CASMURRO", new BigDecimal("39.90")), 1)), 1L), 7L);
+        Pedido recusado = pedidoRepository.findById(pedido.getId()).orElseThrow();
+        recusado.finalizar(recusado.getTransacaoId(), StatusPedido.PAGAMENTO_RECUSADO, "Cartão vencido.",
+                LocalDateTime.now());
+        pedidoRepository.save(recusado);
+
+        Pedido segundoClique = pedidoRepository.findById(pedido.getId()).orElseThrow();
+        pedidoService.tentarDeNovo(pedido.getId(), new NovaTentativaRequest(2L), 7L);
+        segundoClique.novaTentativa(3L, "transacao-do-segundo-clique");
+
+        assertThatThrownBy(() -> pedidoRepository.save(segundoClique))
+                .isInstanceOf(OptimisticLockingFailureException.class);
+
+        Pedido gravado = pedidoRepository.findById(pedido.getId()).orElseThrow();
+        assertThat(gravado.getStatus()).isEqualTo(StatusPedido.PROCESSANDO);
+        assertThat(gravado.getCartaoId()).isEqualTo(2L);
+        assertThat(gravado.getTentativas()).singleElement()
+                .satisfies(tentativa -> assertThat(tentativa.resultado()).isEqualTo(StatusPedido.PAGAMENTO_RECUSADO));
+    }
 
     @Test
     void pedido_novo_inicia_a_saga_pela_outbox_com_o_pedido_como_chave() {
