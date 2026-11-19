@@ -14,11 +14,11 @@ import org.junit.jupiter.api.Test;
 class TransicaoSagaTest {
 
     @Test
-    void caminho_feliz_passa_por_todos_os_servicos_ate_o_fim() {
+    void caminho_feliz_reserva_o_estoque_antes_de_cobrar() {
         assertThat(TransicaoSaga.proximoTopico(ORQUESTRADOR, SUCESSO)).isEqualTo(Topico.VALIDACAO_LIVRO_SUCESSO);
-        assertThat(TransicaoSaga.proximoTopico(VALIDACAO_LIVRO_SERVICE, SUCESSO)).isEqualTo(Topico.PAGAMENTO_SUCESSO);
-        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, SUCESSO)).isEqualTo(Topico.ESTOQUE_SUCESSO);
-        assertThat(TransicaoSaga.proximoTopico(ESTOQUE_SERVICE, SUCESSO)).isEqualTo(Topico.FIM_SUCESSO);
+        assertThat(TransicaoSaga.proximoTopico(VALIDACAO_LIVRO_SERVICE, SUCESSO)).isEqualTo(Topico.ESTOQUE_SUCESSO);
+        assertThat(TransicaoSaga.proximoTopico(ESTOQUE_SERVICE, SUCESSO)).isEqualTo(Topico.PAGAMENTO_SUCESSO);
+        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, SUCESSO)).isEqualTo(Topico.FIM_SUCESSO);
     }
 
     @Test
@@ -31,8 +31,8 @@ class TransicaoSagaTest {
 
     @Test
     void falha_desfaz_o_servico_anterior_ate_finalizar() {
-        assertThat(TransicaoSaga.proximoTopico(ESTOQUE_SERVICE, FALHA)).isEqualTo(Topico.PAGAMENTO_FALHA);
-        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, FALHA)).isEqualTo(Topico.VALIDACAO_LIVRO_FALHA);
+        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, FALHA)).isEqualTo(Topico.ESTOQUE_FALHA);
+        assertThat(TransicaoSaga.proximoTopico(ESTOQUE_SERVICE, FALHA)).isEqualTo(Topico.VALIDACAO_LIVRO_FALHA);
         assertThat(TransicaoSaga.proximoTopico(VALIDACAO_LIVRO_SERVICE, FALHA)).isEqualTo(Topico.FIM_FALHA);
         assertThat(TransicaoSaga.proximoTopico(ORQUESTRADOR, FALHA)).isEqualTo(Topico.FIM_FALHA);
     }
