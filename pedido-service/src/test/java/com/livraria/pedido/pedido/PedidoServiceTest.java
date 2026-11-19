@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,14 +22,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.livraria.pedido.evento.Evento;
 import com.livraria.pedido.evento.EventoService;
+import com.livraria.pedido.pedido.dto.NovaTentativaRequest;
 import com.livraria.pedido.pedido.dto.PedidoRequest;
 import com.livraria.pedido.pedido.exceptions.CartaoNaoInformadoException;
+import com.livraria.pedido.pedido.exceptions.PedidoNaoEncontradoException;
 import com.livraria.pedido.pedido.exceptions.PedidoSemItensException;
+import com.livraria.pedido.pedido.exceptions.TentativaEmAndamentoException;
+import com.livraria.pedido.pedido.exceptions.TentativaNaoPermitidaException;
 import com.livraria.pedido.saga.SagaProducer;
 
 @ExtendWith(MockitoExtension.class)
@@ -119,6 +125,99 @@ class PedidoServiceTest {
                 .isInstanceOf(CartaoNaoInformadoException.class);
 
         verify(pedidoRepository, never()).save(any());
+    }
+
+    @Test
+    void pedido_novo_comeca_processando() {
+        devolverOPedidoSalvoComId("pedido-1");
+        devolverOEventoSalvo();
+
+        Pedido pedido = pedidoService.criar(new PedidoRequest(List.of(DOM_CASMURRO), CARTAO), USUARIO);
+
+        assertThat(pedido.getStatus()).isEqualTo(StatusPedido.PROCESSANDO);
+        assertThat(pedido.getTentativas()).isEmpty();
+    }
+
+    @Test
+    void busca_so_o_pedido_do_usuario_logado() {
+        when(pedidoRepository.findByIdAndUsuarioId("pedido-1", 8L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> pedidoService.buscar("pedido-1", 8L))
+                .isInstanceOf(PedidoNaoEncontradoException.class);
+    }
+
+    @Test
+    void pagamento_recusado_aceita_outro_cartao_numa_nova_transacao() {
+        Pedido pedido = pedidoComPagamentoRecusado();
+        String transacaoRecusada = pedido.getTransacaoId();
+        when(pedidoRepository.findByIdAndUsuarioId("pedido-1", USUARIO)).thenReturn(Optional.of(pedido));
+        when(pedidoRepository.save(pedido)).thenReturn(pedido);
+        devolverOEventoSalvo();
+
+        Pedido emAndamento = pedidoService.tentarDeNovo("pedido-1", new NovaTentativaRequest(2L), USUARIO);
+
+        assertThat(emAndamento.getStatus()).isEqualTo(StatusPedido.PROCESSANDO);
+        assertThat(emAndamento.getMotivo()).isNull();
+        assertThat(emAndamento.getCartaoId()).isEqualTo(2L);
+        assertThat(emAndamento.getTransacaoId()).isNotEqualTo(transacaoRecusada);
+        assertThat(emAndamento.getTentativas()).singleElement()
+                .satisfies(tentativa -> assertThat(tentativa.transacaoId()).isEqualTo(transacaoRecusada));
+
+        ArgumentCaptor<Evento> capturado = ArgumentCaptor.forClass(Evento.class);
+        verify(sagaProducer).iniciar(capturado.capture());
+        assertThat(capturado.getValue().getTransacaoId()).isEqualTo(emAndamento.getTransacaoId());
+        assertThat(capturado.getValue().getPedido().getCartaoId()).isEqualTo(2L);
+    }
+
+    @Test
+    void nao_tenta_de_novo_um_pedido_que_nao_teve_o_pagamento_recusado() {
+        Pedido pedido = pedidoSalvo();
+        pedido.finalizar(pedido.getTransacaoId(), StatusPedido.FALHOU, "Estoque insuficiente.",
+                LocalDateTime.now(OUTUBRO_DE_2026));
+        when(pedidoRepository.findByIdAndUsuarioId("pedido-1", USUARIO)).thenReturn(Optional.of(pedido));
+
+        assertThatThrownBy(() -> pedidoService.tentarDeNovo("pedido-1", new NovaTentativaRequest(2L), USUARIO))
+                .isInstanceOf(TentativaNaoPermitidaException.class);
+
+        verify(pedidoRepository, never()).save(any());
+        verify(sagaProducer, never()).iniciar(any());
+    }
+
+    @Test
+    void nova_tentativa_exige_um_cartao() {
+        when(pedidoRepository.findByIdAndUsuarioId("pedido-1", USUARIO))
+                .thenReturn(Optional.of(pedidoComPagamentoRecusado()));
+
+        assertThatThrownBy(() -> pedidoService.tentarDeNovo("pedido-1", new NovaTentativaRequest(null), USUARIO))
+                .isInstanceOf(CartaoNaoInformadoException.class);
+
+        verify(sagaProducer, never()).iniciar(any());
+    }
+
+    @Test
+    void clique_duplo_recusa_a_segunda_tentativa() {
+        Pedido pedido = pedidoComPagamentoRecusado();
+        when(pedidoRepository.findByIdAndUsuarioId("pedido-1", USUARIO)).thenReturn(Optional.of(pedido));
+        when(pedidoRepository.save(pedido)).thenThrow(new OptimisticLockingFailureException("versao antiga"));
+
+        assertThatThrownBy(() -> pedidoService.tentarDeNovo("pedido-1", new NovaTentativaRequest(2L), USUARIO))
+                .isInstanceOf(TentativaEmAndamentoException.class);
+
+        verify(sagaProducer, never()).iniciar(any());
+    }
+
+    private Pedido pedidoSalvo() {
+        Pedido pedido = new Pedido(List.of(DOM_CASMURRO), USUARIO, CARTAO, "transacao-1",
+                LocalDateTime.now(OUTUBRO_DE_2026));
+        pedido.setId("pedido-1");
+        return pedido;
+    }
+
+    private Pedido pedidoComPagamentoRecusado() {
+        Pedido pedido = pedidoSalvo();
+        pedido.finalizar("transacao-1", StatusPedido.PAGAMENTO_RECUSADO, "Cartão vencido.",
+                LocalDateTime.now(OUTUBRO_DE_2026));
+        return pedido;
     }
 
     private void devolverOPedidoSalvoComId(String id) {

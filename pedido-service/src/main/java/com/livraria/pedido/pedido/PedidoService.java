@@ -4,6 +4,10 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import com.livraria.pedido.pedido.dto.NovaTentativaRequest;
+import com.livraria.pedido.pedido.exceptions.PedidoNaoEncontradoException;
+import com.livraria.pedido.pedido.exceptions.TentativaEmAndamentoException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -33,12 +37,31 @@ public class PedidoService {
     public Pedido criar(PedidoRequest request, Long usuarioId) {
         Pedido novo = new Pedido(request.itens(), usuarioId, request.cartaoId(), novaTransacaoId(),
                 LocalDateTime.now(clock));
+        return iniciarSaga(novo);
+    }
 
+    public Pedido buscar(String pedidoId, Long usuarioId){
+        return  pedidoRepository.findByIdAndUsuarioId(pedidoId, usuarioId)
+                .orElseThrow(PedidoNaoEncontradoException::new);
+    }
+
+    public Pedido tentarDeNovo(String pedidoId, NovaTentativaRequest request, Long usuarioId){
+        Pedido pedido = buscar(pedidoId, usuarioId);
+        pedido.novaTentativa(request.cartaoId(), novaTransacaoId());
+
+        try{
+            return iniciarSaga(pedido);
+        }catch (OptimisticLockingFailureException ex){
+            throw new TentativaEmAndamentoException();
+        }
+    }
+
+    private Pedido iniciarSaga(Pedido pedido){
         return transacao.execute(status -> {
-            Pedido pedido = pedidoRepository.save(novo);
-            Evento evento = eventoService.salvar(new Evento(pedido, LocalDateTime.now(clock)));
+            Pedido salvo = pedidoRepository.save(pedido);
+            Evento evento = eventoService.salvar(new Evento(salvo, LocalDateTime.now(clock)));
             sagaProducer.iniciar(evento);
-            return pedido;
+            return salvo;
         });
     }
 
