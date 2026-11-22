@@ -50,7 +50,6 @@ public class CartaoService {
         Cartao cartao = new Cartao(
                 criptografia.criptografar(numero.valor()),
                 numero.ultimosQuatro(),
-                criptografia.criptografar(cvv.valor()),
                 nomeTitular,
                 validade,
                 usuarioId,
@@ -75,8 +74,7 @@ public class CartaoService {
                 cartao.getId(),
                 criptografia.descriptografar(cartao.getNumeroCriptografado()),
                 cartao.getNomeTitular(),
-                cartao.getValidade().formatada(),
-                criptografia.descriptografar(cartao.getCvvCriptografado()));
+                cartao.getValidade().formatada());
     }
 
     private String nomeTitularValidado(String nome) {

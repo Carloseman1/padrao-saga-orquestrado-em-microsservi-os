@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -67,7 +68,7 @@ class CartaoServiceTest {
     }
 
     @Test
-    void nao_guarda_numero_nem_cvv_em_claro() {
+    void nao_guarda_o_numero_em_claro() {
         devolverOCartaoSalvo();
 
         cartaoService.cadastrar(requisicao(12, 2028, "123"), USUARIO);
@@ -77,10 +78,16 @@ class CartaoServiceTest {
         Cartao salvo = capturado.getValue();
 
         assertThat(salvo.getNumeroCriptografado()).isNotEqualTo(NUMERO_SO_DIGITOS);
-        assertThat(salvo.getCvvCriptografado()).isNotEqualTo("123");
         assertThat(salvo.getUltimosQuatro()).isEqualTo("1111");
         assertThat(criptografia.descriptografar(salvo.getNumeroCriptografado()))
                 .isEqualTo(NUMERO_SO_DIGITOS);
+    }
+
+    @Test
+    void o_cartao_nao_tem_onde_guardar_o_cvv() {
+        assertThat(Cartao.class.getDeclaredFields())
+                .extracting(Field::getName)
+                .noneMatch(nome -> nome.toLowerCase().contains("cvv"));
     }
 
     @Test
@@ -174,13 +181,12 @@ class CartaoServiceTest {
     }
 
     @Test
-    void ler_cartao_devolve_numero_e_cvv_abertos() {
+    void ler_cartao_devolve_o_numero_aberto() {
         when(cartaoRepository.findByIdAndUsuarioId(1L, USUARIO)).thenReturn(Optional.of(umCartao()));
 
         CartaoAbertoDTO aberto = cartaoService.lerCartao(1L, USUARIO, "usuario@teste.com");
 
         assertThat(aberto.numero()).isEqualTo(NUMERO_SO_DIGITOS);
-        assertThat(aberto.cvv()).isEqualTo("123");
         assertThat(aberto.validade()).isEqualTo("12/2028");
     }
 
@@ -218,7 +224,6 @@ class CartaoServiceTest {
         return new Cartao(
                 criptografia.criptografar(numero.valor()),
                 numero.ultimosQuatro(),
-                criptografia.criptografar("123"),
                 "USUARIO TESTE",
                 new Validade(12, 2028),
                 USUARIO,

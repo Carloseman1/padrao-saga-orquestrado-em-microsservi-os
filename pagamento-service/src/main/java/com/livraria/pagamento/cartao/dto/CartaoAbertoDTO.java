@@ -4,6 +4,5 @@ public record CartaoAbertoDTO(
         Long id,
         String numero,
         String nomeTitular,
-        String validade,
-        String cvv) {
+        String validade) {
 }

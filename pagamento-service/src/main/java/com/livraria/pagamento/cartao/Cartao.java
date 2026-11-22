@@ -27,9 +27,6 @@ public class Cartao {
     @Column(name = "ultimos_quatro", nullable = false)
     private String ultimosQuatro;
 
-    @Column(name = "cvv_criptografado", nullable = false)
-    private String cvvCriptografado;
-
     @Column(name = "nome_titular", nullable = false)
     private String nomeTitular;
 
@@ -48,11 +45,10 @@ public class Cartao {
     protected Cartao() {
     }
 
-    public Cartao(String numeroCriptografado, String ultimosQuatro, String cvvCriptografado,
+    public Cartao(String numeroCriptografado, String ultimosQuatro,
                   String nomeTitular, Validade validade, Long usuarioId, LocalDateTime criadoEm) {
         this.numeroCriptografado = numeroCriptografado;
         this.ultimosQuatro = ultimosQuatro;
-        this.cvvCriptografado = cvvCriptografado;
         this.nomeTitular = nomeTitular;
         this.validadeMes = validade.mes();
         this.validadeAno = validade.ano();
