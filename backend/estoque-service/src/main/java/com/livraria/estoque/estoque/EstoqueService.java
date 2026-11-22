@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.livraria.estoque.estoque.dto.EntradaEstoqueRequest;
+import com.livraria.estoque.estoque.dto.DisponibilidadeDTO;
 import com.livraria.estoque.estoque.dto.EstoqueDTO;
 import com.livraria.estoque.estoque.exceptions.EstoqueNaoEncontradoException;
 import com.livraria.estoque.estoque.exceptions.MovimentacaoDuplicadaException;
@@ -68,6 +69,12 @@ public class EstoqueService {
 
         estoque.repor(request.quantidade());
         return EstoqueDTO.de(estoqueRepository.save(estoque));
+    }
+
+    public List<DisponibilidadeDTO> disponibilidade() {
+        return estoqueRepository.findAll(Sort.by("codigoLivro")).stream()
+                .map(DisponibilidadeDTO::de)
+                .toList();
     }
 
     public List<EstoqueDTO> listar() {

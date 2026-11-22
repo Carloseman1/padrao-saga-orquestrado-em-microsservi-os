@@ -27,6 +27,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     public static final String ATRIBUTO_PERFIL = "usuarioPerfil";
 
     private static final List<String> PREFIXOS_PUBLICOS  = List.of(
+            "GET /api/estoques/disponibilidade",
             "GET /swagger-ui",
             "GET /v3/api-docs");
 

@@ -39,6 +39,27 @@ class JwtAuthFilterTest {
     }
 
     @Test
+    void disponibilidade_do_estoque_e_publica_para_o_catalogo() throws Exception {
+        MockFilterChain cadeia = new MockFilterChain();
+
+        filtro.doFilter(new MockHttpServletRequest("GET", "/api/estoques/disponibilidade"),
+                new MockHttpServletResponse(), cadeia);
+
+        assertThat(cadeia.getRequest()).isNotNull();
+    }
+
+    @Test
+    void quantidade_exata_do_estoque_continua_exigindo_login() throws Exception {
+        MockHttpServletResponse resposta = new MockHttpServletResponse();
+        MockFilterChain cadeia = new MockFilterChain();
+
+        filtro.doFilter(new MockHttpServletRequest("GET", "/api/estoques"), resposta, cadeia);
+
+        assertThat(resposta.getStatus()).isEqualTo(401);
+        assertThat(cadeia.getRequest()).isNull();
+    }
+
+    @Test
     void criar_pedido_sem_cookie_responde_401() throws Exception {
         MockHttpServletResponse resposta = new MockHttpServletResponse();
         MockFilterChain cadeia = new MockFilterChain();

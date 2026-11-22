@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.livraria.estoque.estoque.dto.EntradaEstoqueRequest;
+import com.livraria.estoque.estoque.dto.DisponibilidadeDTO;
 import com.livraria.estoque.estoque.dto.EstoqueDTO;
 
 @RestController
@@ -32,6 +33,11 @@ public class EstoqueController {
         usuarioAutenticado.exigirPerfil(Perfis.OPERADOR, Perfis.ADMIN);
         EstoqueDTO atualizado = estoqueService.registrarEntrada(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(atualizado);
+    }
+
+    @GetMapping("/disponibilidade")
+    public List<DisponibilidadeDTO> disponibilidade() {
+        return estoqueService.disponibilidade();
     }
 
     @GetMapping
