@@ -1,6 +1,6 @@
 # Saga orquestrada com microsserviços
 
-Projeto de estudo do padrão Saga orquestrado. O domínio é uma livraria: um pedido passa pela validação dos livros, pela baixa de estoque e pelo pagamento, cada etapa num serviço com seu próprio banco. Como não dá pra ter uma transação única entre bancos diferentes, um orquestrador coordena as etapas pelo Kafka e, se alguma falhar, manda desfazer as que já tinham rodado.
+Projeto de estudo do padrão Saga orquestrado. O domínio é uma livraria: um pedido passa pela validação dos livros, pela baixa de estoque, pelo pagamento e pela emissão da NF-e, cada etapa num serviço com seu próprio banco. Como não dá pra ter uma transação única entre bancos diferentes, um orquestrador coordena as etapas pelo Kafka e, se alguma falhar, manda desfazer as que já tinham rodado.
 
 ## Tecnologias
 
@@ -44,7 +44,7 @@ Com tudo no ar, o `demo.py` faz pedidos de exemplo e mostra cada etapa por onde 
 py demo.py
 ```
 
-Ele roda cinco cenários: compra aprovada, falha no estoque, falha no pagamento, livro fora do catálogo e uma mensagem com JSON quebrado indo para a DLT. Dá pra rodar só um, por exemplo `py demo.py estoque`. Cada compra aprovada baixa o estoque de verdade, então depois de muitas execuções o livro acaba. Para voltar ao estoque inicial, rode `py build.py --recriar`, que derruba os containers e sobe os bancos do zero.
+Ele roda seis cenários: compra aprovada, falha no estoque, falha no pagamento, NF-e rejeitada pela SEFAZ simulada, livro fora do catálogo e uma mensagem com JSON quebrado indo para a DLT. Dá pra rodar só um, por exemplo `py demo.py estoque`. Cada compra aprovada baixa o estoque de verdade, então depois de muitas execuções o livro acaba. Para voltar ao estoque inicial, rode `py build.py --recriar`, que derruba os containers e sobe os bancos do zero.
 
 ```
 === Falha no estoque ===
@@ -171,7 +171,7 @@ Cada serviço tem o próprio banco e nenhum acessa o banco do outro. Tudo o que 
 
 O usuario-service fica fora da saga. Ele cuida do cadastro, do login e da recuperação de senha, e consulta o ViaCEP para preencher o endereço no cadastro. No login ele grava o JWT num cookie, e a ideia é que os outros serviços validem esse token por conta própria, sem chamar o usuario-service.
 
-O fiscal-service emite e cancela a NF-e do pedido. Ele conversa com uma SEFAZ simulada, atrás da interface `Sefaz`: emitir de verdade exige certificado digital, CNPJ e credenciamento na SEFAZ, o que não faz sentido num projeto de estudo. A simulação gera a chave de acesso de 44 dígitos com o dígito verificador, rejeita com o código 778 os livros configurados como NCM inválido (por padrão, `O_GUARANI`) e registra o cancelamento com o evento 110111. Ele já recebe os comandos `nfe-sucesso` e `nfe-falha`, mas o orquestrador ainda não manda o pedido para essa etapa.
+O fiscal-service emite e cancela a NF-e do pedido. Ele conversa com uma SEFAZ simulada, atrás da interface `Sefaz`: emitir de verdade exige certificado digital, CNPJ e credenciamento na SEFAZ, o que não faz sentido num projeto de estudo. A simulação gera a chave de acesso de 44 dígitos com o dígito verificador, rejeita com o código 778 os livros configurados como NCM inválido (por padrão, `O_GUARANI`) e registra o cancelamento com o evento 110111. A NF-e é a última etapa da saga: só é emitida depois que o pagamento foi aprovado. Se a SEFAZ rejeitar a nota, a compensação estorna o pagamento, devolve o livro ao estoque e o pedido termina em `FALHOU`, porque trocar o cartão não resolve uma nota rejeitada.
 
 ## Síncrono e assíncrono
 
@@ -191,11 +191,11 @@ A regra que segui: **o usuário fala com os serviços de forma síncrona (HTTP),
 
 **Login sem chamada a cada requisição**. O usuario-service gera o JWT e o grava num cookie `HttpOnly` com `SameSite=Strict`. O navegador envia o cookie sozinho, e cada serviço confere a assinatura do token com o mesmo segredo, sem perguntar nada ao usuario-service. Se ele cair, quem já está logado continua comprando, só o login para. A contrapartida é que o logout só invalida o token no próprio usuario-service; nos outros ele vale até expirar, que hoje é 1 hora.
 
-**Cartão em dois momentos**. O cadastro é síncrono: o pagamento-service valida, criptografa e responde na hora. O uso é assíncrono: o pedido leva só o `cartaoId`, o `usuarioId` vem do token, e é na etapa de pagamento da saga que o pagamento-service confere se o cartão existe, é daquele usuário e não está vencido. Se não estiver, responde `ROLLBACK_PENDENTE` e a saga se desfaz como em qualquer outra falha. Não validei o cartão no momento do pedido porque isso obrigaria o pedido-service a chamar o pagamento por HTTP, e com o pagamento fora do ar ninguém conseguiria nem registrar o pedido. O número do cartão nunca passa pelo Kafka.
+**Cartão em dois momentos**. O cadastro é síncrono: o pagamento-service valida, criptografa e responde na hora. O uso é assíncrono: o pedido leva só o `cartaoId`, o `usuarioId` vem do token, e é na etapa de pagamento da saga que o pagamento-service confere se o cartão existe, é daquele usuário e não está vencido. Se não estiver, responde `ROLLBACK_PENDENTE` e a saga se desfaz como em qualquer outra falha. Não validei o cartão no momento do pedido porque isso obrigaria o pedido-service a chamar o pagamento por HTTP, e com o pagamento fora do ar ninguém conseguiria nem registrar o pedido. O número do cartão nunca passa pelo Kafka. O CVV é validado no cadastro e descartado: pelo PCI DSS, o código de segurança não pode ser guardado depois da autorização, nem criptografado.
 
 ## Como a saga funciona
 
-No caminho feliz a ordem é validação, estoque e pagamento. O estoque vem antes do pagamento para ninguém ser cobrado por um livro que acabou; se o pagamento for recusado, a compensação devolve o livro ao estoque. O `POST` responde `202` antes da saga terminar, com o pedido em `PROCESSANDO`. Quando a saga termina, o pedido-service muda o status para `CONCLUIDO`, `PAGAMENTO_RECUSADO` ou `FALHOU`, e o cliente acompanha pelo `GET /api/pedidos/{id}`.
+No caminho feliz a ordem é validação, estoque, pagamento e NF-e. O estoque vem antes do pagamento para ninguém ser cobrado por um livro que acabou; se o pagamento for recusado, a compensação devolve o livro ao estoque. O `POST` responde `202` antes da saga terminar, com o pedido em `PROCESSANDO`. Quando a saga termina, o pedido-service muda o status para `CONCLUIDO`, `PAGAMENTO_RECUSADO` ou `FALHOU`, e o cliente acompanha pelo `GET /api/pedidos/{id}`.
 
 **Status do pedido e status da saga são coisas diferentes.** O status da saga (`SUCESSO`, `ROLLBACK_PENDENTE`, `FALHA`) coordena os serviços e não é mostrado ao cliente. O status do pedido é o que o cliente vê, e só o pedido-service o guarda. Por isso ele não viaja no evento do Kafka.
 
@@ -244,9 +244,12 @@ As regras de para onde ir ficam no enum `TransicaoSaga`, no orquestrador:
 | ESTOQUE_SERVICE | SUCESSO | pagamento-sucesso |
 | ESTOQUE_SERVICE | ROLLBACK_PENDENTE | estoque-falha |
 | ESTOQUE_SERVICE | FALHA | validacao-livro-falha |
-| PAGAMENTO_SERVICE | SUCESSO | fim-sucesso |
+| PAGAMENTO_SERVICE | SUCESSO | nfe-sucesso |
 | PAGAMENTO_SERVICE | ROLLBACK_PENDENTE | pagamento-falha |
 | PAGAMENTO_SERVICE | FALHA | estoque-falha |
+| FISCAL_SERVICE | SUCESSO | fim-sucesso |
+| FISCAL_SERVICE | ROLLBACK_PENDENTE | nfe-falha |
+| FISCAL_SERVICE | FALHA | pagamento-falha |
 
 No projeto original isso era uma matriz `Object[][]` lida por índice e com cast. Troquei por enum para o compilador conferir os tipos.
 
