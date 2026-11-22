@@ -56,7 +56,7 @@ def porta_ocupada(porta):
 
 
 def testar(servico):
-    pasta = RAIZ / servico
+    pasta = RAIZ / "backend" / servico
     wrapper = pasta / ("mvnw.cmd" if sys.platform == "win32" else "mvnw")
     resultado = executar([str(wrapper), "-q", "-B", "clean", "test"], pasta=pasta, capturar=True)
     return servico, resultado.returncode == 0, resultado.stdout + resultado.stderr

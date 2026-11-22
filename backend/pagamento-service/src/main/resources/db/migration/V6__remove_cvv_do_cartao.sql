@@ -1,0 +1,1 @@
+ALTER TABLE cartao DROP COLUMN cvv_criptografado;
