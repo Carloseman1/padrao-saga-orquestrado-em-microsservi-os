@@ -12,6 +12,8 @@ public enum Topico {
     PAGAMENTO_FALHA("pagamento-falha"),
     ESTOQUE_SUCESSO("estoque-sucesso"),
     ESTOQUE_FALHA("estoque-falha"),
+    NFE_SUCESSO("nfe-sucesso"),
+    NFE_FALHA("nfe-falha"),
     NOTIFICAR_FIM("notificar-fim");
 
     private final String nome;

@@ -1,9 +1,6 @@
 package com.livraria.orquestrador.orquestracao;
 
-import static com.livraria.orquestrador.saga.OrigemEvento.ESTOQUE_SERVICE;
-import static com.livraria.orquestrador.saga.OrigemEvento.ORQUESTRADOR;
-import static com.livraria.orquestrador.saga.OrigemEvento.PAGAMENTO_SERVICE;
-import static com.livraria.orquestrador.saga.OrigemEvento.VALIDACAO_LIVRO_SERVICE;
+import static com.livraria.orquestrador.saga.OrigemEvento.*;
 import static com.livraria.orquestrador.saga.StatusSaga.FALHA;
 import static com.livraria.orquestrador.saga.StatusSaga.ROLLBACK_PENDENTE;
 import static com.livraria.orquestrador.saga.StatusSaga.SUCESSO;
@@ -29,7 +26,11 @@ public enum TransicaoSaga {
 
     PAGAMENTO_ROLLBACK(PAGAMENTO_SERVICE, ROLLBACK_PENDENTE, Topico.PAGAMENTO_FALHA),
     PAGAMENTO_FALHA(PAGAMENTO_SERVICE, FALHA, Topico.ESTOQUE_FALHA),
-    PAGAMENTO_SUCESSO(PAGAMENTO_SERVICE, SUCESSO, Topico.FIM_SUCESSO);
+    PAGAMENTO_SUCESSO(PAGAMENTO_SERVICE, SUCESSO, Topico.NFE_SUCESSO),
+
+    FISCAL_ROLLBACK(FISCAL_SERVICE, ROLLBACK_PENDENTE, Topico.NFE_FALHA),
+    FISCAL_FALHA(FISCAL_SERVICE, FALHA, Topico.PAGAMENTO_FALHA),
+    FISCAL_SUCESSO(FISCAL_SERVICE, SUCESSO, Topico.FIM_SUCESSO);
 
 
     private final OrigemEvento origem;

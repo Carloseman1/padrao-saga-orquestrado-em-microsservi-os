@@ -1,6 +1,7 @@
 package com.livraria.orquestrador.orquestracao;
 
 import static com.livraria.orquestrador.saga.OrigemEvento.ESTOQUE_SERVICE;
+import static com.livraria.orquestrador.saga.OrigemEvento.FISCAL_SERVICE;
 import static com.livraria.orquestrador.saga.OrigemEvento.ORQUESTRADOR;
 import static com.livraria.orquestrador.saga.OrigemEvento.PAGAMENTO_SERVICE;
 import static com.livraria.orquestrador.saga.OrigemEvento.VALIDACAO_LIVRO_SERVICE;
@@ -14,26 +15,35 @@ import org.junit.jupiter.api.Test;
 class TransicaoSagaTest {
 
     @Test
-    void caminho_feliz_reserva_o_estoque_antes_de_cobrar() {
+    void caminho_feliz_reserva_o_estoque_cobra_e_emite_a_nfe() {
         assertThat(TransicaoSaga.proximoTopico(ORQUESTRADOR, SUCESSO)).isEqualTo(Topico.VALIDACAO_LIVRO_SUCESSO);
         assertThat(TransicaoSaga.proximoTopico(VALIDACAO_LIVRO_SERVICE, SUCESSO)).isEqualTo(Topico.ESTOQUE_SUCESSO);
         assertThat(TransicaoSaga.proximoTopico(ESTOQUE_SERVICE, SUCESSO)).isEqualTo(Topico.PAGAMENTO_SUCESSO);
-        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, SUCESSO)).isEqualTo(Topico.FIM_SUCESSO);
+        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, SUCESSO)).isEqualTo(Topico.NFE_SUCESSO);
+        assertThat(TransicaoSaga.proximoTopico(FISCAL_SERVICE, SUCESSO)).isEqualTo(Topico.FIM_SUCESSO);
     }
 
     @Test
     void rollback_pendente_desfaz_o_proprio_servico() {
         assertThat(TransicaoSaga.proximoTopico(VALIDACAO_LIVRO_SERVICE, ROLLBACK_PENDENTE))
                 .isEqualTo(Topico.VALIDACAO_LIVRO_FALHA);
-        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, ROLLBACK_PENDENTE)).isEqualTo(Topico.PAGAMENTO_FALHA);
         assertThat(TransicaoSaga.proximoTopico(ESTOQUE_SERVICE, ROLLBACK_PENDENTE)).isEqualTo(Topico.ESTOQUE_FALHA);
+        assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, ROLLBACK_PENDENTE)).isEqualTo(Topico.PAGAMENTO_FALHA);
+        assertThat(TransicaoSaga.proximoTopico(FISCAL_SERVICE, ROLLBACK_PENDENTE)).isEqualTo(Topico.NFE_FALHA);
     }
 
     @Test
     void falha_desfaz_o_servico_anterior_ate_finalizar() {
+        assertThat(TransicaoSaga.proximoTopico(FISCAL_SERVICE, FALHA)).isEqualTo(Topico.PAGAMENTO_FALHA);
         assertThat(TransicaoSaga.proximoTopico(PAGAMENTO_SERVICE, FALHA)).isEqualTo(Topico.ESTOQUE_FALHA);
         assertThat(TransicaoSaga.proximoTopico(ESTOQUE_SERVICE, FALHA)).isEqualTo(Topico.VALIDACAO_LIVRO_FALHA);
         assertThat(TransicaoSaga.proximoTopico(VALIDACAO_LIVRO_SERVICE, FALHA)).isEqualTo(Topico.FIM_FALHA);
         assertThat(TransicaoSaga.proximoTopico(ORQUESTRADOR, FALHA)).isEqualTo(Topico.FIM_FALHA);
+    }
+
+    @Test
+    void cria_os_topicos_da_nfe_junto_com_os_outros() {
+        assertThat(Topico.NFE_SUCESSO.getNome()).isEqualTo("nfe-sucesso");
+        assertThat(Topico.NFE_FALHA.getNome()).isEqualTo("nfe-falha");
     }
 }
