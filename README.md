@@ -32,7 +32,7 @@ Para desenvolver, prefiro subir só os bancos e o Kafka no Docker e rodar os ser
 docker compose up -d pedido-db validacao-livro-db pagamento-db estoque-db usuario-db kafka redpanda-console
 ```
 
-Depois é rodar a classe `*Application` de cada serviço, ou `./mvnw spring-boot:run` dentro da pasta dele. O pagamento e o estoque precisam da variável `DB_PORT` (5433 e 5434), porque cada Postgres do compose está numa porta diferente. O usuario-service já vem com a porta 5435 como padrão.
+Depois é rodar a classe `*Application` de cada serviço, ou `./mvnw spring-boot:run` dentro da pasta dele em `backend/`. O pagamento e o estoque precisam da variável `DB_PORT` (5433 e 5434), porque cada Postgres do compose está numa porta diferente. O usuario-service já vem com a porta 5435 como padrão.
 
 Se os containers dos serviços estiverem rodando, não suba os mesmos serviços pelo `mvnw`, as portas já vão estar ocupadas.
 
@@ -438,10 +438,25 @@ Algumas partes deste projeto levaram bem mais tempo do que eu esperava. Deixo aq
 
 ## Estrutura
 
+```
+├── backend/              um projeto Maven por serviço
+│   ├── pedido-service/
+│   ├── orquestrador-service/
+│   ├── validacao-livro-service/
+│   ├── pagamento-service/
+│   ├── estoque-service/
+│   ├── usuario-service/
+│   └── fiscal-service/
+├── frontend/             React + Vite + TypeScript
+├── docker-compose.yml    sobe bancos, Kafka e serviços
+├── build.py              testa e sobe tudo no Docker
+└── demo.py               roda os cenários da saga
+```
+
 Cada serviço é organizado por domínio, no mesmo padrão do meu projeto de cadastro de cartões. Exemplo do pagamento:
 
 ```
-pagamento-service/src/main/java/com/livraria/pagamento/
+backend/pagamento-service/src/main/java/com/livraria/pagamento/
 ├── pagamento/    entidade, service, consumer, repository e exceptions
 ├── saga/         contrato do evento, conversão de JSON e producer
 └── shared/       configurações e tratamento de erros
@@ -450,7 +465,7 @@ pagamento-service/src/main/java/com/livraria/pagamento/
 O usuario-service segue o mesmo padrão, com os pacotes trazidos do projeto de cartões:
 
 ```
-usuario-service/src/main/java/com/livraria/usuario/
+backend/usuario-service/src/main/java/com/livraria/usuario/
 ├── usuario/            cadastro, login, recuperação de senha e bloqueio de tentativas
 ├── endereco/           consulta de endereço pelo CEP
 ├── integracao/viacep/  cliente HTTP do ViaCEP e os erros de comunicação
@@ -459,6 +474,28 @@ usuario-service/src/main/java/com/livraria/usuario/
 ```
 
 As migrations ficam em `src/main/resources/db/migration` de cada serviço com banco relacional. O `ddl-auto` está em `validate`, então quem cria e altera tabela é só o Flyway.
+
+O front-end segue a mesma ideia de organizar por domínio, em vez de por tipo de arquivo:
+
+```
+frontend/src/
+├── usuario/          login, sessão e chamadas ao usuario-service
+├── catalogo/         livros e estoque
+├── carrinho/
+├── checkout/
+├── pedido/           acompanhamento do pedido
+└── compartilhado/    cliente HTTP, componentes e estilos usados por todos
+```
+
+Para rodar o front, com os serviços já de pé nas portas padrão:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Ele abre em http://localhost:5173. O `vite.config.ts` repassa cada `/api/...` para o serviço certo, então o navegador fala com uma origem só e o cookie de sessão funciona sem configurar CORS.
 
 ## Endpoints
 

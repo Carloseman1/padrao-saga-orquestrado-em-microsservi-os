@@ -36,3 +36,7 @@ out/
 
 sessao.txt
 __pycache__/
+
+# arquivos de trava e backup de editores
+.LCK*
+*~

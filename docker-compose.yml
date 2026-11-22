@@ -165,7 +165,7 @@ services:
       - "8082:8081"
 
   pedido-service:
-    build: ./pedido-service
+    build: ./backend/pedido-service
     container_name: pedido-service
     depends_on:
       pedido-db:
@@ -181,7 +181,7 @@ services:
       - "3000:3000"
 
   orquestrador-service:
-    build: ./orquestrador-service
+    build: ./backend/orquestrador-service
     container_name: orquestrador-service
     depends_on:
       - kafka
@@ -193,7 +193,7 @@ services:
       - "8080:8080"
 
   validacao-livro-service:
-    build: ./validacao-livro-service
+    build: ./backend/validacao-livro-service
     container_name: validacao-livro-service
     depends_on:
       validacao-livro-db:
@@ -213,7 +213,7 @@ services:
       - "8090:8090"
 
   pagamento-service:
-    build: ./pagamento-service
+    build: ./backend/pagamento-service
     container_name: pagamento-service
     depends_on:
       pagamento-db:
@@ -233,7 +233,7 @@ services:
       - "8091:8091"
 
   estoque-service:
-    build: ./estoque-service
+    build: ./backend/estoque-service
     container_name: estoque-service
     depends_on:
       estoque-db:
@@ -253,7 +253,7 @@ services:
       - "8092:8092"
 
   usuario-service:
-    build: ./usuario-service
+    build: ./backend/usuario-service
     container_name: usuario-service
     depends_on:
       usuario-db:
@@ -271,7 +271,7 @@ services:
       - "8093:8093"
 
   fiscal-service:
-    build: ./fiscal-service
+    build: ./backend/fiscal-service
     container_name: fiscal-service
     depends_on:
       fiscal-db:

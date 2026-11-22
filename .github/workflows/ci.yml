@@ -25,7 +25,7 @@ jobs:
           - fiscal-service
     defaults:
       run:
-        working-directory: ${{ matrix.servico }}
+        working-directory: backend/${{ matrix.servico }}
     steps:
       - uses: actions/checkout@v5
 
@@ -34,7 +34,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-          cache-dependency-path: ${{ matrix.servico }}/pom.xml
+          cache-dependency-path: backend/${{ matrix.servico }}/pom.xml
 
       - name: Compila e roda os testes
         run: ./mvnw -B verify
@@ -44,7 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: relatorio-testes-${{ matrix.servico }}
-          path: ${{ matrix.servico }}/target/surefire-reports/
+          path: backend/${{ matrix.servico }}/target/surefire-reports/
 
   compose:
     name: Valida o docker-compose
@@ -52,3 +52,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker compose config --quiet
+  frontend:
+    name: Front-end (lint e build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
