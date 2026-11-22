@@ -153,6 +153,18 @@ class EventoServiceTest {
     }
 
     @Test
+    void nfe_rejeitada_encerra_o_pedido_sem_oferecer_outro_cartao() {
+        Pedido pedido = pedido("pedido-1");
+        when(pedidoRepository.findById("pedido-1")).thenReturn(Optional.of(pedido));
+
+        eventoService.notificarFim(fimComFalhaEm(pedido, "FISCAL_SERVICE",
+                "NF-e rejeitada pela SEFAZ: 778 - Informado NCM inexistente."));
+
+        assertThat(pedido.getStatus()).isEqualTo(StatusPedido.FALHOU);
+        assertThat(pedido.getMotivo()).isEqualTo("NF-e rejeitada pela SEFAZ: 778 - Informado NCM inexistente.");
+    }
+
+    @Test
     void fim_de_uma_tentativa_antiga_nao_muda_o_pedido() {
         Pedido pedido = pedido("pedido-1");
         Evento atrasado = fimComFalhaEm(pedido, "PAGAMENTO_SERVICE", "Cartão vencido.");
