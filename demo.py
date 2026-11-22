@@ -56,6 +56,11 @@ CENARIOS = {
         "itens": [item("DOM_CASMURRO", 39.90, 1)],
         "cartao_do_admin": True,
     },
+    "nfe": {
+        "titulo": "NF-e rejeitada",
+        "explicacao": "1 x O Guarani, com um NCM que a SEFAZ simulada não conhece. Validação, estoque e pagamento passam, a SEFAZ rejeita a nota e tudo é desfeito: o pagamento é estornado e o livro volta ao estoque.",
+        "itens": [item("O_GUARANI", 34.90, 1)],
+    },
     "livro": {
         "titulo": "Livro fora do catálogo",
         "explicacao": "Código que não existe. A saga para logo na primeira etapa.",
