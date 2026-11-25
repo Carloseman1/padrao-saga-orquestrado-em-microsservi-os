@@ -1,0 +1,31 @@
+.preco {
+  display: inline-flex;
+  align-items: flex-start;
+  color: var(--cor-texto);
+  line-height: 1;
+}
+
+.simbolo,
+.centavos {
+  font-size: 0.75rem;
+  margin-top: 3px;
+}
+
+.simbolo {
+  margin-right: 2px;
+}
+
+.inteiro {
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+.grande .simbolo,
+.grande .centavos {
+  font-size: 0.95rem;
+  margin-top: 4px;
+}
+
+.grande .inteiro {
+  font-size: 2.2rem;
+}

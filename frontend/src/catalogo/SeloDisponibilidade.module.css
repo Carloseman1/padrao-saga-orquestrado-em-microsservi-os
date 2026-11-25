@@ -1,0 +1,17 @@
+.selo {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ultimas {
+  background: var(--cor-aviso-fundo);
+  color: var(--cor-aviso);
+}
+
+.esgotado {
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro);
+}

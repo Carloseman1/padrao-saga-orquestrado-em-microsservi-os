@@ -1,16 +1,25 @@
-import { Route, Routes } from 'react-router-dom'
+import { Outlet, Route, Routes } from 'react-router-dom'
+import { Catalogo } from './catalogo/Catalogo'
+import { LivroDetalhe } from './catalogo/LivroDetalhe'
+import { Cabecalho } from './compartilhado/Cabecalho'
 import { Login } from './usuario/Login'
-import { useSessao } from './usuario/useSessao'
 
-function Inicio() {
-  const { usuario } = useSessao()
-  return <h1>{usuario ? `Olá, ${usuario.nome}` : 'Livraria'}</h1>
+function ComCabecalho() {
+  return (
+    <>
+      <Cabecalho />
+      <Outlet />
+    </>
+  )
 }
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Inicio />} />
+      <Route element={<ComCabecalho />}>
+        <Route path="/" element={<Catalogo />} />
+        <Route path="/livros/:codigo" element={<LivroDetalhe />} />
+      </Route>
       <Route path="/login" element={<Login />} />
     </Routes>
   )

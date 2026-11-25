@@ -1,0 +1,70 @@
+.carrossel {
+  padding: 20px;
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+}
+
+.topo {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.titulo {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.verTodos {
+  font-size: 0.9rem;
+  color: var(--cor-link);
+}
+
+.area {
+  position: relative;
+}
+
+.trilho {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 190px;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.trilho::-webkit-scrollbar {
+  display: none;
+}
+
+.trilho > * {
+  scroll-snap-align: start;
+}
+
+.seta {
+  position: absolute;
+  top: 35%;
+  z-index: 1;
+  width: 40px;
+  height: 80px;
+  border: 1px solid var(--cor-borda);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.95);
+  font-size: 2rem;
+  color: var(--cor-texto);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.seta:hover {
+  background: var(--cor-superficie);
+}
+
+.esquerda {
+  left: -8px;
+}
+
+.direita {
+  right: -8px;
+}

@@ -1,0 +1,169 @@
+.pagina {
+  max-width: var(--largura-maxima);
+  margin: 0 auto;
+  padding: 24px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sobreDestaque {
+  position: relative;
+  margin-top: -90px;
+}
+
+.destaque {
+  padding: 40px 20px 120px;
+  background: linear-gradient(120deg, #13281f 0%, #1e5642 55%, #2f7a5f 100%);
+  color: var(--cor-cabecalho-texto);
+}
+
+.destaqueConteudo {
+  max-width: var(--largura-maxima);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 40px;
+}
+
+.destaqueTexto {
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.etiqueta {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(244, 183, 64, 0.18);
+  color: var(--cor-acao);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.destaqueTitulo {
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.1;
+}
+
+.destaqueAutor {
+  margin: 0;
+  font-size: 1.1rem;
+  opacity: 0.9;
+}
+
+.destaqueDescricao {
+  margin: 0;
+  line-height: 1.6;
+  opacity: 0.85;
+}
+
+.destaqueBotao {
+  margin-top: 8px;
+  padding: 11px 28px;
+  border-radius: 999px;
+  background: var(--cor-acao);
+  color: var(--cor-acao-texto);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.destaqueBotao:hover {
+  background: var(--cor-acao-hover);
+}
+
+.destaqueCapa {
+  width: 220px;
+  flex-shrink: 0;
+  transform: rotate(3deg);
+}
+
+.blocos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.bloco {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: var(--raio);
+  background: var(--cor-superficie);
+  color: inherit;
+  text-decoration: none;
+}
+
+.bloco:hover .verMais {
+  text-decoration: underline;
+}
+
+.tituloBloco {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.mosaico {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.mosaico > img,
+.mosaico > div {
+  aspect-ratio: 1 / 1.15;
+  object-position: top;
+}
+
+.verMais {
+  font-size: 0.9rem;
+  color: var(--cor-link);
+}
+
+.cabecalhoResultados {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tituloResultados {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.limpar {
+  color: var(--cor-link);
+  font-size: 0.9rem;
+}
+
+.grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.aviso {
+  text-align: center;
+  color: var(--cor-texto-suave);
+}
+
+.erro {
+  text-align: center;
+  color: var(--cor-erro);
+}
+
+@media (max-width: 720px) {
+  .destaqueCapa {
+    display: none;
+  }
+}
