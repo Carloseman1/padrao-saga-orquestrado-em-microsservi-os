@@ -553,9 +553,13 @@ O login responde com `id`, `nome` e `email`. O token não vem no corpo, só no c
 | Serviço | Método | Endpoint | O que faz |
 |---|---|---|---|
 | validacao-livro | POST | `/api/livros` | Cadastra o livro no catálogo e avisa o estoque pelo Kafka |
-| validacao-livro | GET | `/api/livros` | Lista o catálogo |
+| validacao-livro | GET | `/api/livros` | Lista o catálogo com autor, categoria, descrição e capa (público) |
+| validacao-livro | GET | `/api/livros/{codigo}` | Detalhe de um livro (público) |
 | estoque | POST | `/api/estoques/entradas` | Soma uma entrada ao estoque de um livro |
-| estoque | GET | `/api/estoques` | Lista o estoque |
+| estoque | GET | `/api/estoques` | Lista a quantidade exata do estoque (operador e admin) |
+| estoque | GET | `/api/estoques/disponibilidade` | Situação de cada livro para a vitrine: `DISPONIVEL`, `ULTIMAS_UNIDADES` ou `ESGOTADO` (público) |
+
+As capas vêm da API pública de capas do Open Library (`covers.openlibrary.org`), pelo id da capa guardado no catálogo.
 
 Os erros seguem sempre o mesmo formato:
 
