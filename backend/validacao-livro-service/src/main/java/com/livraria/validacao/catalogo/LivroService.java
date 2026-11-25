@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.livraria.validacao.catalogo.dto.LivroDTO;
 import com.livraria.validacao.catalogo.dto.LivroRequest;
 import com.livraria.validacao.catalogo.exceptions.LivroJaCadastradoException;
+import com.livraria.validacao.catalogo.exceptions.LivroNaoEncontradoException;
 import com.livraria.validacao.catalogo.exceptions.QuantidadeInicialInvalidaException;
 import com.livraria.validacao.shared.exception.CampoObrigatorioException;
 
@@ -46,6 +47,12 @@ public class LivroService {
         livroCadastradoProducer.enviar(new LivroCadastrado(codigo, titulo, request.quantidadeInicial()));
 
         return LivroDTO.de(livro);
+    }
+
+    public LivroDTO buscar(String codigo) {
+        return livroRepository.findByCodigo(codigo.toUpperCase())
+                .map(LivroDTO::de)
+                .orElseThrow(LivroNaoEncontradoException::new);
     }
 
     public List<LivroDTO> listar() {

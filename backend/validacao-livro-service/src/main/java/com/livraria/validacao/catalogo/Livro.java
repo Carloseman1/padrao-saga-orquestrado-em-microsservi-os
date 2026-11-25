@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -30,6 +32,22 @@ public class Livro {
     @Column(name = "preco", nullable = false, precision = 10, scale = 2)
     private BigDecimal preco;
 
+    @Column(name = "autor")
+    private String autor;
+
+    @Column(name = "editora")
+    private String editora;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "categoria", nullable = false)
+    private CategoriaLivro categoria;
+
+    @Column(name = "descricao")
+    private String descricao;
+
+    @Column(name = "capa_url")
+    private String capaUrl;
+
     protected Livro() {
     }
 
@@ -37,5 +55,6 @@ public class Livro {
         this.codigo = codigo;
         this.titulo = titulo;
         this.preco = preco;
+        this.categoria = CategoriaLivro.OUTROS;
     }
 }

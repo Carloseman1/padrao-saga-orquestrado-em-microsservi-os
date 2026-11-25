@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.livraria.validacao.catalogo.dto.LivroDTO;
 import com.livraria.validacao.catalogo.dto.LivroRequest;
 import com.livraria.validacao.catalogo.exceptions.LivroJaCadastradoException;
+import com.livraria.validacao.catalogo.exceptions.LivroNaoEncontradoException;
 import com.livraria.validacao.catalogo.exceptions.PrecoInvalidoException;
 import com.livraria.validacao.catalogo.exceptions.QuantidadeInicialInvalidaException;
 import com.livraria.validacao.shared.exception.CampoObrigatorioException;
@@ -38,6 +40,34 @@ class LivroServiceTest {
     @BeforeEach
     void criarService() {
         livroService = new LivroService(livroRepository, livroCadastradoProducer);
+    }
+
+    @Test
+    void busca_o_livro_pelo_codigo_com_os_detalhes_do_catalogo() {
+        Livro livro = new Livro("SAPIENS", "Sapiens", PRECO);
+        livro.setAutor("Yuval Noah Harari");
+        livro.setCategoria(CategoriaLivro.HISTORIA);
+        livro.setCapaUrl("https://covers.openlibrary.org/b/id/8634250-L.jpg");
+        when(livroRepository.findByCodigo("SAPIENS")).thenReturn(Optional.of(livro));
+
+        LivroDTO encontrado = livroService.buscar("sapiens");
+
+        assertThat(encontrado.autor()).isEqualTo("Yuval Noah Harari");
+        assertThat(encontrado.categoria()).isEqualTo(CategoriaLivro.HISTORIA);
+        assertThat(encontrado.capaUrl()).endsWith("8634250-L.jpg");
+    }
+
+    @Test
+    void livro_fora_do_catalogo_responde_nao_encontrado() {
+        when(livroRepository.findByCodigo("INEXISTENTE")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> livroService.buscar("INEXISTENTE"))
+                .isInstanceOf(LivroNaoEncontradoException.class);
+    }
+
+    @Test
+    void livro_cadastrado_sem_categoria_fica_em_outros() {
+        assertThat(new Livro("O_ALIENISTA", "O Alienista", PRECO).getCategoria()).isEqualTo(CategoriaLivro.OUTROS);
     }
 
     @Test
