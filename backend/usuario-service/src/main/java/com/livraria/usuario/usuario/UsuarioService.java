@@ -14,8 +14,11 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.livraria.usuario.endereco.Cep;
 import com.livraria.usuario.endereco.Endereco;
 import com.livraria.usuario.endereco.EnderecoService;
+import com.livraria.usuario.integracao.viacep.exceptions.ViaCepIndisponivelException;
+import com.livraria.usuario.integracao.viacep.exceptions.ViaCepTimeoutException;
 import com.livraria.usuario.seguranca.JwtService;
 import com.livraria.usuario.shared.exception.CampoObrigatorioException;
 
@@ -65,7 +68,7 @@ public class UsuarioService {
             throw new EmailCadastradoException();
         }
 
-        Endereco endereco = enderecoService.buscar(request.cep())
+        Endereco endereco = enderecoDoCep(request)
                 .completadoCom(numero, complementoLimpo(request.complemento()));
 
         Usuario usuario = new Usuario(nome, sobrenome, email.valor(),
@@ -75,6 +78,21 @@ public class UsuarioService {
             return UsuarioDTO.de(usuarioRepository.save(usuario));
         } catch (DataIntegrityViolationException ex) {
             throw new EmailCadastradoException();
+        }
+    }
+
+    private Endereco enderecoDoCep(UsuarioRequest request) {
+        try {
+            return enderecoService.buscar(request.cep());
+        } catch (ViaCepIndisponivelException | ViaCepTimeoutException ex) {
+            EnderecoInformado informado = request.enderecoInformado();
+            if (informado == null || !informado.completo()) {
+                throw ex;
+            }
+
+            log.warn("Consulta de CEP indisponível no cadastro; usando o endereço informado pelo cliente");
+            return Endereco.doCep(new Cep(request.cep()).valor(), informado.rua().trim(), informado.bairro().trim(),
+                    informado.cidade().trim(), informado.estado().trim().toUpperCase());
         }
     }
 

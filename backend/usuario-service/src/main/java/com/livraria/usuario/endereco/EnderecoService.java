@@ -5,7 +5,9 @@ import org.springframework.stereotype.Service;
 import com.livraria.usuario.endereco.exceptions.CepNaoEncontradoException;
 import com.livraria.usuario.integracao.viacep.ViaCepClient;
 import com.livraria.usuario.integracao.viacep.ViaCepResponse;
+import com.livraria.usuario.integracao.viacep.exceptions.ViaCepIndisponivelException;
 import com.livraria.usuario.integracao.viacep.exceptions.ViaCepRespostaInesperadaException;
+import com.livraria.usuario.integracao.viacep.exceptions.ViaCepTimeoutException;
 
 @Service
 public class EnderecoService {

@@ -23,6 +23,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import com.livraria.usuario.endereco.Endereco;
 import com.livraria.usuario.endereco.EnderecoService;
+import com.livraria.usuario.integracao.viacep.exceptions.ViaCepIndisponivelException;
+import com.livraria.usuario.usuario.dto.EnderecoInformado;
 import com.livraria.usuario.seguranca.JwtService;
 import com.livraria.usuario.shared.exception.CampoObrigatorioException;
 import com.livraria.usuario.usuario.dto.LoginRequest;
@@ -100,6 +102,31 @@ class UsuarioServiceTest {
     }
 
     @Test
+    void viacep_fora_do_ar_usa_o_endereco_que_o_cliente_digitou() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+        when(enderecoService.buscar("01001-000")).thenThrow(new ViaCepIndisponivelException());
+        when(usuarioRepository.save(any(Usuario.class))).thenAnswer(chamada -> chamada.getArgument(0));
+        UsuarioRequest request = new UsuarioRequest("Usuario", "Teste", EMAIL, SENHA, "01001-000", "100", null,
+                new EnderecoInformado("Praça da Sé", "Sé", "São Paulo", "sp"));
+
+        UsuarioDTO cadastrado = usuarioService.cadastrar(request);
+
+        assertThat(cadastrado.endereco().cep()).isEqualTo("01001000");
+        assertThat(cadastrado.endereco().cidade()).isEqualTo("São Paulo");
+        assertThat(cadastrado.endereco().estado()).isEqualTo("SP");
+        assertThat(cadastrado.endereco().numero()).isEqualTo("100");
+    }
+
+    @Test
+    void viacep_fora_do_ar_sem_endereco_digitado_continua_avisando() {
+        when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+        when(enderecoService.buscar("01001-000")).thenThrow(new ViaCepIndisponivelException());
+
+        assertThatThrownBy(() -> usuarioService.cadastrar(requisicao()))
+                .isInstanceOf(ViaCepIndisponivelException.class);
+    }
+
+    @Test
     void email_repetido_nao_gasta_chamada_ao_viacep() {
         when(usuarioRepository.findByEmail(EMAIL)).thenReturn(Optional.of(umUsuarioSalvo()));
 
@@ -112,7 +139,7 @@ class UsuarioServiceTest {
     @Test
     void senha_fora_do_padrao_para_antes_de_tudo() {
         UsuarioRequest request = new UsuarioRequest(
-                "Usuario", "Teste", EMAIL, "123456", "01001-000", "100", null);
+                "Usuario", "Teste", EMAIL, "123456", "01001-000", "100", null, null);
 
         assertThatThrownBy(() -> usuarioService.cadastrar(request))
                 .isInstanceOf(SenhaForaDoPadraoException.class);
@@ -123,7 +150,7 @@ class UsuarioServiceTest {
     @Test
     void email_invalido_para_antes_de_tudo() {
         UsuarioRequest request = new UsuarioRequest(
-                "Usuario", "Teste", "usuario", SENHA, "01001-000", "100", null);
+                "Usuario", "Teste", "usuario", SENHA, "01001-000", "100", null, null);
 
         assertThatThrownBy(() -> usuarioService.cadastrar(request))
                 .isInstanceOf(EmailInvalidoException.class);
@@ -134,7 +161,7 @@ class UsuarioServiceTest {
     @Test
     void numero_do_endereco_em_branco_reclama() {
         UsuarioRequest request = new UsuarioRequest(
-                "Usuario", "Teste", EMAIL, SENHA, "01001-000", "  ", null);
+                "Usuario", "Teste", EMAIL, SENHA, "01001-000", "  ", null, null);
 
         assertThatThrownBy(() -> usuarioService.cadastrar(request))
                 .isInstanceOf(CampoObrigatorioException.class);
@@ -319,7 +346,7 @@ class UsuarioServiceTest {
     }
 
     private UsuarioRequest requisicao() {
-        return new UsuarioRequest("Usuario", "Teste", EMAIL, SENHA, "01001-000", "100", "apto 42");
+        return new UsuarioRequest("Usuario", "Teste", EMAIL, SENHA, "01001-000", "100", "apto 42", null);
     }
 
     private Endereco enderecoDoCep() {

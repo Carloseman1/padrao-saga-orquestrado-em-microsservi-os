@@ -1,5 +1,7 @@
 package com.livraria.usuario.usuario.dto;
 
+import com.livraria.usuario.endereco.EnderecoInformado;
+
 public record UsuarioRequest(
         String nome,
         String sobrenome,
@@ -7,6 +9,7 @@ public record UsuarioRequest(
         String senha,
         String cep,
         String numero,
-        String complemento
+        String complemento,
+        EnderecoInformado enderecoInformado
 ) {
 }
