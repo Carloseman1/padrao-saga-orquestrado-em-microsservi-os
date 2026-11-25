@@ -7,7 +7,7 @@ export type Usuario = {
 }
 
 export function entrar(email: string, senha: string): Promise<Usuario> {
-    return chamarApi<Usuario>('POST', 'api/usuario/login', { email, senha });
+    return chamarApi<Usuario>('POST', '/api/usuarios/login', { email, senha });
 }
 
 export function sair(): Promise<void> {
