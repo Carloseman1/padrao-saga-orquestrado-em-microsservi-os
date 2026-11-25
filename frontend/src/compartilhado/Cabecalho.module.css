@@ -1,0 +1,161 @@
+.cabecalho {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  color: var(--cor-cabecalho-texto);
+}
+
+.barra {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+  background: var(--cor-cabecalho);
+}
+
+.marca {
+  font-family: var(--fonte-titulo);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--cor-cabecalho-texto);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ponto {
+  color: var(--cor-acao);
+}
+
+.busca {
+  flex: 1;
+  display: flex;
+  max-width: 760px;
+  border-radius: var(--raio);
+  overflow: hidden;
+  background: var(--cor-superficie);
+}
+
+.busca:focus-within {
+  outline: 3px solid var(--cor-acao);
+}
+
+.busca input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: none;
+  outline: none;
+  color: var(--cor-texto);
+}
+
+.busca button {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  border: none;
+  background: var(--cor-acao);
+  color: var(--cor-acao-texto);
+}
+
+.busca button:hover {
+  background: var(--cor-acao-hover);
+}
+
+.conta {
+  display: flex;
+  flex-direction: column;
+  white-space: nowrap;
+}
+
+.botaoConta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+.botaoConta:hover {
+  border-color: var(--cor-cabecalho-texto);
+}
+
+.linhaPequena {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.linhaForte {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.carrinho {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.iconeCarrinho {
+  position: relative;
+  display: inline-flex;
+}
+
+.contador {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-30%);
+  color: var(--cor-acao);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.categorias {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 8px 20px;
+  background: var(--cor-cabecalho-2);
+  font-size: 0.9rem;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.categorias a {
+  color: var(--cor-cabecalho-texto);
+  text-decoration: none;
+}
+
+.categorias a:hover {
+  text-decoration: underline;
+}
+
+.aviso {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--cor-acao);
+}
+
+@media (max-width: 760px) {
+  .barra {
+    flex-wrap: wrap;
+  }
+
+  .busca {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .aviso {
+    display: none;
+  }
+}

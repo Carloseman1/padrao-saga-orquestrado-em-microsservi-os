@@ -1,10 +1,11 @@
-import { createContext } from "react";
-import type { Usuario } from "./usuarioApi";
+import { createContext } from 'react'
+import type { Usuario } from './usuarioApi'
 
 export type Sessao = {
-    usuario: Usuario | null;
-    entrar: (email: string, senha: string) => Promise<void>;
-    sair: () => Promise<void>;
+  usuario: Usuario | null
+  entrar: (email: string, senha: string) => Promise<void>
+  sair: () => Promise<void>
+  abrirLogin: () => void
 }
 
-export const SessaoContexto = createContext<Sessao | null>(null);
+export const SessaoContexto = createContext<Sessao | null>(null)

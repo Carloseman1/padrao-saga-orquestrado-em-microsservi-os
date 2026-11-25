@@ -7,51 +7,15 @@
 
 .cartao {
   width: 100%;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--espaco);
-  padding: calc(var(--espaco) * 1.5);
+  max-width: 380px;
+  padding: 28px;
   background: var(--cor-superficie);
   border: 1px solid var(--cor-borda);
-  border-radius: var(--raio);
+  border-radius: 12px;
 }
 
 .titulo {
-  margin: 0;
+  margin: 0 0 20px;
+  font-family: var(--fonte-titulo);
   font-size: 1.5rem;
-}
-
-.campo {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: var(--cor-texto-suave);
-  font-size: 0.9rem;
-}
-
-.campo input {
-  padding: 10px 12px;
-  border: 1px solid var(--cor-borda);
-  border-radius: var(--raio);
-  color: var(--cor-texto);
-}
-
-.erro {
-  margin: 0;
-  color: var(--cor-erro);
-  font-size: 0.9rem;
-}
-
-.botao {
-  padding: 10px 12px;
-  border: none;
-  border-radius: var(--raio);
-  background: var(--cor-destaque);
-  color: var(--cor-destaque-texto);
-}
-
-.botao:disabled {
-  opacity: 0.7;
-  cursor: wait;
 }

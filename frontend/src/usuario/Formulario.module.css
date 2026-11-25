@@ -1,0 +1,133 @@
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco);
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--cor-texto-suave);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.campo input {
+  padding: 10px 12px;
+  border: 1px solid var(--cor-borda-forte);
+  border-radius: var(--raio);
+  color: var(--cor-texto);
+  font-weight: 400;
+}
+
+.campo input:focus {
+  outline: 2px solid var(--cor-destaque);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.erro {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--raio);
+  background: var(--cor-erro-fundo);
+  color: var(--cor-erro);
+  font-size: 0.9rem;
+}
+
+.botao {
+  padding: 11px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--cor-acao);
+  color: var(--cor-acao-texto);
+  font-weight: 700;
+}
+
+.botao:hover {
+  background: var(--cor-acao-hover);
+}
+
+.botao:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.linha {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.linhaCep {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.dica {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--cor-texto-suave);
+}
+
+.sucesso {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--raio);
+  background: #e7f3e2;
+  color: var(--cor-sucesso);
+  font-size: 0.9rem;
+}
+
+.endereco {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--raio);
+  background: var(--cor-fundo);
+  font-size: 0.85rem;
+}
+
+.alternativas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--cor-borda);
+  font-size: 0.85rem;
+}
+
+.alternativas p {
+  margin: 8px 0 0;
+  color: var(--cor-texto-suave);
+}
+
+.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--cor-link);
+  font-weight: 600;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.botaoSecundario {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--cor-borda-forte);
+  border-radius: 999px;
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  font-weight: 600;
+}
+
+.botaoSecundario:hover {
+  background: var(--cor-fundo);
+}
